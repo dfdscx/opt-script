@@ -1,41 +1,30 @@
 #!/bin/sh
 #copyright by hiboy
 source /etc/storage/script/init.sh
-nvramshow=`nvram showall | grep kcptun | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-nvramshow=`nvram showall | grep ss | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-
+TAG="SS_SPEC"		  # iptables tag
+ss_enable=`nvram get ss_enable`
 [ -z $ss_enable ] && ss_enable=0 && nvram set ss_enable=0
+if [ "$ss_enable" != "0" ] ; then
+nvramshow=`nvram showall | grep '=' | grep kcptun | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+nvramshow=`nvram showall | grep '=' | grep ss | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
 
-if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep ss)" ]  && [ ! -s /tmp/script/_ss ]; then
-	mkdir -p /tmp/script
-	ln -sf $scriptfilepath /tmp/script/_ss
-	chmod 777 /tmp/script/_ss
-fi
+
 #================华丽的分割线====================================
 #set -x
 #初始化开始
-TAG="SS_SPEC"		  # iptables tag
 FWI="/tmp/firewall.shadowsocks.pdcn" # firewall include file
 
-ss_enable=`nvram get ss_enable`
-ss_enable=${ss_enable:-"0"}
 ss_type=`nvram get ss_type`
-ss_type=${ss_type:-"0"}
+[ -z $ss_type ] && ss_type=0 && nvram set ss_type=$ss_type
 ss_run_ss_local=`nvram get ss_run_ss_local`
 
 kcptun_enable=`nvram get kcptun_enable`
-kcptun_enable=${kcptun_enable:-"0"}
+[ -z $kcptun_enable ] && kcptun_enable=0 && nvram set kcptun_enable=$kcptun_enable
 kcptun2_enable=`nvram get kcptun2_enable`
-kcptun2_enable=${kcptun2_enable:-"0"}
+[ -z $kcptun2_enable ] && kcptun2_enable=0 && nvram set kcptun2_enable=$kcptun2_enable
 kcptun2_enable2=`nvram get kcptun2_enable2`
-kcptun2_enable2=${kcptun2_enable2:-"0"}
+[ -z $kcptun2_enable2 ] && kcptun2_enable2=0 && nvram set kcptun2_enable2=$kcptun2_enable2
 
-kcptun_server=`nvram get kcptun_server`
-if [ "$kcptun_enable" != "0" ] ; then
-resolveip=`/usr/bin/resolveip -4 -t 4 $kcptun_server | grep -v : | sed -n '1p'`
-[ -z "$resolveip" ] && resolveip=`nslookup $kcptun_server | awk 'NR==5{print $3}'` 
-kcptun_server=$resolveip
-fi
 [ "$kcptun_enable" = "0" ] && kcptun_server=""
 nvram set ss_server1=`nvram get ss_server`
 nvram set ss_s1_port=`nvram get ss_server_port`
@@ -46,34 +35,30 @@ nvram set ss_s1_method=`nvram get ss_method`
 #如果server2 只设置了ip，则其他配置与S1一样
 ss_s1_local_address=`nvram get ss_s1_local_address`
 ss_s2_local_address=`nvram get ss_s2_local_address`
-ss_s1_local_address=${ss_s1_local_address:-"0.0.0.0"}
-ss_s2_local_address=${ss_s2_local_address:-"0.0.0.0"}
-nvram set ss_s1_local_address=$ss_s1_local_address
-nvram set ss_s2_local_address=$ss_s2_local_address
+[ -z $ss_s1_local_address ] && ss_s1_local_address="0.0.0.0" && nvram set ss_s1_local_address=$ss_s1_local_address
+[ -z $ss_s2_local_address ] && ss_s2_local_address="0.0.0.0" && nvram set ss_s2_local_address=$ss_s2_local_address
 ss_s1_local_port=`nvram get ss_s1_local_port`
 ss_s2_local_port=`nvram get ss_s2_local_port`
-ss_s1_local_port=${ss_s1_local_port:-"1081"}
-ss_s2_local_port=${ss_s2_local_port:-"1082"}
-nvram set ss_s1_local_port=$ss_s1_local_port
-nvram set ss_s2_local_port=$ss_s2_local_port
+[ -z $ss_s1_local_port ] && ss_s1_local_port=1081 && nvram set ss_s1_local_port=$ss_s1_local_port
+[ -z $ss_s2_local_port ] && ss_s2_local_port=1082 && nvram set ss_s2_local_port=$ss_s2_local_port
 ss_server1=`nvram get ss_server1`
 ss_server2=`nvram get ss_server2`
 
 ss_s1_port=`nvram get ss_s1_port`
 ss_s2_port=`nvram get ss_s2_port`
-ss_s2_port=${ss_s2_port:-$ss_s1_port}
+[ -z $ss_s2_port ] && ss_s2_port="$ss_s1_port" && nvram set ss_s2_port=$ss_s2_port
 ss_s1_method=`nvram get ss_s1_method| tr 'A-Z' 'a-z'`
 ss_s2_method=`nvram get ss_s2_method| tr 'A-Z' 'a-z'`
-ss_s2_method=${ss_s2_method:-$ss_s1_method}
+[ -z $ss_s2_method ] && ss_s2_method="$ss_s1_method" && nvram set ss_s2_method=$ss_s2_method
 ss_s1_key=`nvram get ss_s1_key`
 ss_s2_key=`nvram get ss_s2_key`
-ss_s2_key=${ss_s2_key:-$ss_s1_key}
+[ -z $ss_s2_key ] && ss_s2_key="$ss_s1_key" && nvram set ss_s2_key=$ss_s2_key
 ss_pdnsd_wo_redir=`nvram get ss_pdnsd_wo_redir` #pdnsd  0、走代理；1、直连
-ss_pdnsd_wo_redir=${ss_pdnsd_wo_redir:-"0"}
+[ -z $ss_pdnsd_wo_redir ] && ss_pdnsd_wo_redir=0 && nvram set ss_pdnsd_wo_redir=$ss_pdnsd_wo_redir
 ss_mode_x=`nvram get ss_mode_x` #ss模式，0 为chnroute, 1 为 gfwlist, 2 为全局, 3为ss-local 建立本地 SOCKS 代理
-ss_mode_x=${ss_mode_x:-"0"}
+[ -z $ss_mode_x ] && ss_mode_x=0 && nvram set ss_mode_x=$ss_mode_x
 ss_working_port=`nvram get ss_working_port` #working port 不需要在界面设置，在watchdog里面设置。
-ss_working_port=${ss_working_port:-"1090"}
+[ -z $ss_working_port ] && ss_working_port=1090 && nvram set ss_working_port=$ss_working_port
 ss_multiport=`nvram get ss_multiport`
 [ -z "$ss_multiport" ] && ss_multiport="22,80,443" && nvram set ss_multiport=$ss_multiport
 [ -n "$ss_multiport" ] && ss_multiport="-m multiport --dports $ss_multiport" || ss_multiport="-m multiport --dports 22,80,443" # 处理多端口设定
@@ -103,9 +88,9 @@ ss_sub3=`nvram get ss_sub3`
 ss_sub4=`nvram get ss_sub4`
 
 ss_tochina_enable=`nvram get ss_tochina_enable`
-ss_tochina_enable=${ss_tochina_enable:-"0"}
+[ -z $ss_tochina_enable ] && ss_tochina_enable=0 && nvram set ss_tochina_enable=$ss_tochina_enable
 ss_udp_enable=`nvram get ss_udp_enable` #udp转发  0、停用；1、启动
-ss_udp_enable=${ss_udp_enable:-"0"}
+[ -z $ss_udp_enable ] && ss_udp_enable=0 && nvram set ss_udp_enable=$ss_udp_enable
 ss_upd_rules=`nvram get ss_upd_rules`
 if [ ! -z "$ss_upd_rules" ] ; then
 	ss_upd_rules="-s $ss_upd_rules" 
@@ -132,14 +117,16 @@ ssr2_type_protocol_custom=`nvram get ssr2_type_protocol_custom`
 [ ! -z "$ssr_type_protocol_custom" ] && [ "$ss_type" = "1" ] && ss_usage_json="$ss_usage_json -G $ssr_type_protocol_custom"
 [ ! -z "$ssr2_type_protocol_custom" ] && [ "$ss_type" = "1" ] && ss_s2_usage_json="$ss_s2_usage_json -G $ssr2_type_protocol_custom"
 # 插件参数
-ss_plugin_config=`nvram get ss_plugin_config`
-ss2_plugin_config=`nvram get ss2_plugin_config`
-[ ! -z "$ss_plugin_config" ] && [ "$ss_type" = "0" ] && ss_usage_json="$ss_usage_json $ss_plugin_config"
-[ ! -z "$ss2_plugin_config" ] && [ "$ss_type" = "0" ] && ss_s2_usage_json="$ss_s2_usage_json $ss2_plugin_config"
+ss_plugin_config="`nvram get ss_plugin_config`"
+ss2_plugin_config="`nvram get ss2_plugin_config`"
+[ "$ss_type" = "1" ] && ss_plugin_config=""
+[ "$ss_type" = "1" ] && ss2_plugin_config=""
+# [ ! -z "$ss_plugin_config" ] && [ "$ss_type" = "0" ] && ss_usage_json="$ss_usage_json $ss_plugin_config"
+# [ ! -z "$ss2_plugin_config" ] && [ "$ss_type" = "0" ] && ss_s2_usage_json="$ss_s2_usage_json $ss2_plugin_config"
 
 touch /etc/storage/shadowsocks_mydomain_script.sh
 LAN_AC_IP=`nvram get LAN_AC_IP`
-LAN_AC_IP=${LAN_AC_IP:-"0"}
+[ -z $LAN_AC_IP ] && LAN_AC_IP=0 && nvram set LAN_AC_IP=$LAN_AC_IP
 
 lan_ipaddr=`nvram get lan_ipaddr`
 ss_DNS_Redirect=`nvram get ss_DNS_Redirect`
@@ -147,10 +134,14 @@ ss_DNS_Redirect_IP=`nvram get ss_DNS_Redirect_IP`
 [ -z "$ss_DNS_Redirect_IP" ] && ss_DNS_Redirect_IP=$lan_ipaddr
 
 ss_updatess=`nvram get ss_updatess`
-ss_updatess=${ss_updatess:-"0"}
-[ -z $ss_link_1 ] && ss_link_1="www.163.com" && nvram set ss_link_1="www.163.com"
+[ -z $ss_updatess ] && ss_updatess=0 && nvram set ss_updatess=$ss_updatess
+[ -z $ss_link_1 ] && ss_link_1="email.163.com" && nvram set ss_link_1="email.163.com"
 [ -z $ss_link_2 ] && ss_link_2="www.google.com.hk" && nvram set ss_link_2="www.google.com.hk"
+[ $ss_link_1 == "www.163.com" ] && ss_link_1="email.163.com" && nvram set ss_link_1="email.163.com"
 
+[ -z $ss_dnsproxy_x ] && ss_dnsproxy_x=0 && nvram set ss_dnsproxy_x=0
+
+fi
 ##  bigandy modify 
 ##  1. 增加xbox的支持 （未实现，下一版本）
 ##  2. 改写获取gfwlist逻辑
@@ -175,9 +166,15 @@ if [ -z "$confdir" ] ; then
 fi
 [ ! -d "$confdir" ] && mkdir -p $confdir
 
+if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep ss)" ]  && [ ! -s /tmp/script/_ss ]; then
+	mkdir -p /tmp/script
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_ss
+	chmod 777 /tmp/script/_ss
+fi
+
 # 创建JSON
 cat > "/tmp/SSJSON.sh" <<-\SSJSONSH
-while getopts ":o:O:g:G:s:p:b:l:k:m:f:" arg; do
+while getopts ":o:O:g:G:s:p:b:l:k:m:f:h:" arg; do
 	case "$arg" in
 		o)
 			obfs=$OPTARG
@@ -212,6 +209,9 @@ while getopts ":o:O:g:G:s:p:b:l:k:m:f:" arg; do
 		f)
 			config_file=$OPTARG
 			;;
+		h)
+			obfs_plugin="`nvram get $OPTARG`"
+			;;
 	esac
 done
 cat > "$config_file" <<-SSJSON
@@ -226,7 +226,8 @@ cat > "$config_file" <<-SSJSON
 "protocol": "$protocol",
 "protocol_param": "$protocol_param",
 "obfs": "$obfs",
-"obfs_param": "$obfs_param"
+"obfs_param": "$obfs_param",
+"plugin": "$obfs_plugin"
 }
 SSJSON
 SSJSONSH
@@ -237,12 +238,22 @@ start_ss_redir()
 logger -t "【ss-redir】" "启动所有的 SS 连线, 出现的 SS 日志并不是错误报告, 只是使用状态日志, 请不要慌张, 只要系统正常你又看不懂就无视它！"
 logger -t "【SS】" "SS服务器1 设置内容：$ss_server1 端口:$ss_s1_port 加密方式:$ss_s1_method "
 [ -z "$ss_server1" ] && { logger -t "【SS】" "[错误!!] SS服务器没有设置"; stop_SS; clean_SS; } 
+if [ -z $(echo $ss_server1 | grep : | grep -v "\.") ] ; then 
 [ ! -z "$ss_server1" ] && ss_s1_ip=`/usr/bin/resolveip -4 -t 4 $ss_server1 | grep -v : | sed -n '1p'`
-[ -z "$ss_s1_ip" ] && ss_s1_ip=`nslookup $ss_server1 | awk 'NR==5{print $3}'` 
+[ -z "$ss_s1_ip" ] && ss_s1_ip=`arNslookup $ss_server1 | sed -n '1p'` 
+else
+# IPv6
+ss_s1_ip=$ss_server1
+fi
 [ -z "$ss_s1_ip" ] && { logger -t "【SS】" "[错误!!] 实在找不到你的SS1服务器IP，麻烦看看哪里错了？"; clean_SS; } 
+if [ -z $(echo $ss_server2 | grep : | grep -v "\.") ] ; then 
 [ ! -z "$ss_server2" ] && ss_s2_ip=`/usr/bin/resolveip -4 -t 4 $ss_server2 | grep -v : | sed -n '1p'`
-[ ! -z "$ss_server2" ] && [ -z "$ss_s2_ip" ] && ss_s2_ip=`nslookup $ss_server2 | awk 'NR==5{print $3}'`
+[ ! -z "$ss_server2" ] && [ -z "$ss_s2_ip" ] && ss_s2_ip=`arNslookup $ss_server2 | sed -n '1p'`
 [ ! -z "$ss_server2" ] && [ -z "$ss_s2_ip" ] && { logger -t "【SS】" "[错误!!] 实在找不到你的SS2服务器IP，麻烦看看哪里错了？"; } 
+else
+# IPv6
+ss_s2_ip=$ss_server2
+fi
 [ ! -z "$ss_s2_ip" ] && ss_ip="$ss_s1_ip,$ss_s2_ip" || ss_ip=$ss_s1_ip
 if [ "$ss_udp_enable" == 1 ] ; then
 ss_usage="$ss_usage -u"
@@ -261,6 +272,8 @@ options1=${options1//auth_sha1_v2/}
 options1=${options1//auth_sha1_v4/}
 options1=${options1//auth_aes128_md5/}
 options1=${options1//auth_aes128_sha1/}
+options1=${options1//auth_chain_a/}
+options1=${options1//auth_chain_b/}
 options1=${options1//auth_sha1/}
 options1=${options1//plain/}
 options1=${options1//http_simple/}
@@ -280,6 +293,8 @@ options2=${options2//auth_sha1_v2/}
 options2=${options2//auth_sha1_v4/}
 options2=${options2//auth_aes128_md5/}
 options2=${options2//auth_aes128_sha1/}
+options2=${options2//auth_chain_a/}
+options2=${options2//auth_chain_b/}
 options2=${options2//auth_sha1/}
 options2=${options2//plain/}
 options2=${options2//http_simple/}
@@ -288,20 +303,25 @@ options2=${options2//tls_simple/}
 options2=${options2//random_head/}
 options2=${options2//tls1.2_ticket_auth/}
 
+ss_plugin_config="`nvram get ss_plugin_config`"
+ss2_plugin_config="`nvram get ss2_plugin_config`"
+[ "$ss_type" = "1" ] && ss_plugin_config=""
+[ "$ss_type" = "1" ] && ss2_plugin_config=""
+
 # 启动程序
 pidof ss-redir  >/dev/null 2>&1 && killall ss-redir && killall -9 ss-redir 2>/dev/null
-/tmp/SSJSON.sh -f /tmp/ss-redir_1.json $ss_usage $ss_usage_json -s $ss_s1_ip -p $ss_s1_port -l 1090 -b 0.0.0.0 -k $ss_s1_key -m $ss_s1_method
+/tmp/SSJSON.sh -f /tmp/ss-redir_1.json $ss_usage $ss_usage_json -s $ss_s1_ip -p $ss_s1_port -l 1090 -b 0.0.0.0 -k $ss_s1_key -m $ss_s1_method -h ss_plugin_config
 ss-redir -c /tmp/ss-redir_1.json $options1 >/dev/null 2>&1 &
 if [ ! -z $ss_server2 ] ; then
 	#启动第二个SS 连线
 	[  -z "$ss_s2_ip" ] && { logger -t "【SS】" "[错误!!] 无法获得 SS 服务器2的IP, 请核查设置"; stop_SS; clean_SS; }
 	logger -t "【SS】" "SS服务器2 设置内容：$ss_server2 端口:$ss_s2_port 加密方式:$ss_s2_method "
-	/tmp/SSJSON.sh -f /tmp/ss-redir_2.json $ss_s2_usage $ss_s2_usage_json -s $ss_s2_ip -p $ss_s2_port -l 1091 -b 0.0.0.0 -k $ss_s2_key -m $ss_s2_method
+	/tmp/SSJSON.sh -f /tmp/ss-redir_2.json $ss_s2_usage $ss_s2_usage_json -s $ss_s2_ip -p $ss_s2_port -l 1091 -b 0.0.0.0 -k $ss_s2_key -m $ss_s2_method -h ss2_plugin_config
 	ss-redir -c /tmp/ss-redir_2.json $options2 >/dev/null 2>&1 &
 fi
 sleep 2
-[ ! -z "`pidof ss-redir`" ] && logger -t "【SS】" "启动成功"
-[ -z "`pidof ss-redir`" ] && logger -t "【SS】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && { nvram set ss_status=00; eval "$scriptfilepath &"; exit 0; }
+[ ! -z "`pidof ss-redir`" ] && logger -t "【SS】" "启动成功" && ss_restart o
+[ -z "`pidof ss-redir`" ] && logger -t "【SS】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && ss_restart x
 
 check_ip
 if [ "$ss_mode_x" = "3" ] || [ "$ss_run_ss_local" = "1" ] ; then
@@ -309,18 +329,18 @@ if [ "$ss_mode_x" = "3" ] || [ "$ss_run_ss_local" = "1" ] ; then
 	logger -t "【ss-local】" "启动所有的 ss-local 连线, 出现的 SS 日志并不是错误报告, 只是使用状态日志, 请不要慌张, 只要系统正常你又看不懂就无视它！"
 	pidof ss-local  >/dev/null 2>&1 && killall ss-local && killall -9 ss-local 2>/dev/null
 	logger -t "【ss-local】" "本地监听地址：$ss_s1_local_address 本地代理端口：$ss_s1_local_port SS服务器1 设置内容：$ss_server1 端口:$ss_s1_port 加密方式:$ss_s1_method "
-	/tmp/SSJSON.sh -f /tmp/ss-local_1.json $ss_usage $ss_usage_json -s $ss_s1_ip -p $ss_s1_port -b $ss_s1_local_address -l $ss_s1_local_port -k $ss_s1_key -m $ss_s1_method
+	/tmp/SSJSON.sh -f /tmp/ss-local_1.json $ss_usage $ss_usage_json -s $ss_s1_ip -p $ss_s1_port -b $ss_s1_local_address -l $ss_s1_local_port -k $ss_s1_key -m $ss_s1_method -h ss_plugin_config
 	ss-local -c /tmp/ss-local_1.json $options1 >/dev/null 2>&1 &
 	if [ ! -z $ss_server2 ] ; then
 		#启动第二个SS 连线
 		[  -z "$ss_s2_ip" ] && { logger -t "【ss-local】" "[错误!!] 无法获得 SS 服务器2的IP,请核查设置"; stop_SS; clean_SS; }
 		logger -t "【ss-local】" "本地监听地址：$ss_s2_local_address 本地代理端口：$ss_s2_local_port SS服务器2 设置内容：$ss_server2 端口:$ss_s2_port 加密方式:$ss_s2_method "
-		/tmp/SSJSON.sh -f /tmp/ss-local_2.json $ss_s2_usage $ss_s2_usage_json -s $ss_s2_ip -p $ss_s2_port -b $ss_s2_local_address -l $ss_s2_local_port -k $ss_s2_key -m $ss_s2_method
+		/tmp/SSJSON.sh -f /tmp/ss-local_2.json $ss_s2_usage $ss_s2_usage_json -s $ss_s2_ip -p $ss_s2_port -b $ss_s2_local_address -l $ss_s2_local_port -k $ss_s2_key -m $ss_s2_method -h ss2_plugin_config
 		ss-local -c /tmp/ss-local_2.json $options2 >/dev/null 2>&1 &
 	fi
 sleep 2
-[ ! -z "`pidof ss-local`" ] && logger -t "【ss-local】" "启动成功"
-[ -z "`pidof ss-local`" ] && logger -t "【ss-local】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && { nvram set ss_status=00; eval "$scriptfilepath &"; exit 0; }
+[ ! -z "`pidof ss-local`" ] && logger -t "【ss-local】" "启动成功" && ss_restart o
+[ -z "`pidof ss-local`" ] && logger -t "【ss-local】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && ss_restart x
 fi
 
 }
@@ -330,28 +350,28 @@ check_ssr()
 {
 umount -l /usr/sbin/ss-redir
 umount -l /usr/sbin/ss-local
+if [ "$ss_type" != "1" ] ; then
+	if [ ! -s "/usr/sbin/ss-redir" ] ; then
+		[ ! -s "/opt/bin/ss0-redir" ] && cp -f /opt/bin/ss-redir /opt/bin/ss0-redir
+		[ -s "/opt/bin/ss0-redir" ] && cp -f /opt/bin/ss0-redir /opt/bin/ss-redir
+	fi
+	if [ ! -s "/usr/sbin/ssr-local" ] ; then
+		[ ! -s "/opt/bin/ss0-local" ] && cp -f /opt/bin/ss-local /opt/bin/ss0-local
+		[ -s "/opt/bin/ss0-local" ] && cp -f /opt/bin/ss0-local /opt/bin/ss-local
+	fi
+fi
 if [ "$ss_type" = "1" ] ; then
 	if [ -s "/usr/sbin/ssr-redir" ] ; then
 		mount --bind /usr/sbin/ssr-redir /usr/sbin/ss-redir
 	else
-		if [ ! -s "/tmp/bin/ssr-redir" ] ; then
-			logger -t "【SSR】" "找不到 ssr-redir. tmp下载程序"
-			mkdir -p /tmp/bin
-			wgetcurl.sh "/tmp/bin/ssr-redir" "$hiboyfile/ssr-redir" "$hiboyfile2/ssr-redir"
-			chmod 777 "/tmp/bin/ssr-redir"
-		fi
-		mount --bind /tmp/bin/ssr-redir /usr/sbin/ss-redir
+		[ ! -s "/opt/bin/ss0-redir" ] && cp -f /opt/bin/ss-redir /opt/bin/ss0-redir
+		[ -s "/opt/bin/ssr-redir" ] && cp -f /opt/bin/ssr-redir /opt/bin/ss-redir
 	fi
 	if [ -s "/usr/sbin/ssr-local" ] ; then
 		mount --bind /usr/sbin/ssr-local /usr/sbin/ss-local
 	else
-		if [ ! -s "/tmp/bin/ssr-local" ] ; then
-			logger -t "【SSR】" "找不到 ssr-local. tmp下载程序"
-			mkdir -p /tmp/bin
-			wgetcurl.sh "/tmp/bin/ssr-local" "$hiboyfile/ssr-local" "$hiboyfile2/ssr-local"
-			chmod 777 "/tmp/bin/ssr-local"
-		fi
-		mount --bind /tmp/bin/ssr-local /usr/sbin/ss-local
+		[ ! -s "/opt/bin/ss0-local" ] && cp -f /opt/bin/ss-local /opt/bin/ss0-local
+		[ -s "/opt/bin/ssr-local" ] && cp -f /opt/bin/ssr-local /opt/bin/ss-local
 	fi
 fi
 }
@@ -376,22 +396,37 @@ if [ "$ss_check" = "1" ] ; then
 			BP_IP="$ss_s1_ip,$ss_s2_ip,$kcptun_server"
 			ss-rules -s "$action_ssip" -l "$action_port" -b $BP_IP -d "RETURN" -a "g,$lan_ipaddr" -e '-m multiport --dports 80' -o -O
 			sleep 1
+			hash check_network 2>/dev/null && {
+			check_network 3
+			[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+				if [ "$check" == "404" ] ; then
+					check_network 3
+					[ "$?" == "0" ] && check=200 || check=404
+				fi
+			}
+			hash check_network 2>/dev/null || check=404
+			[ "$check" == "404" ] && {
 			curltest=`which curl`
 			if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-				wget --continue --no-check-certificate -s -q -T 10 $ss_link_1
-				[ "$?" == "0" ] && check=200 || { check=404; restart_dhcpd && sleep 3; }
-				[ "$check" == "404" ] && wget --continue --no-check-certificate -s -q -T 10 $ss_link_1
-				[ "$check" == "404" ] && [ "$?" == "0" ] && check=200 || check=404
+				wget --continue --no-check-certificate -q -T 10 "$ss_link_1" -O /dev/null
+				[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+				if [ "$check" == "404" ] ; then
+					wget --continue --no-check-certificate -q -T 10 "$ss_link_1" -O /dev/null
+					[ "$?" == "0" ] && check=200 || check=404
+				fi
 			else
 				check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
-				[ "$check" != "200" ] && restart_dhcpd && sleep 3
+				[ "$check" != "200" ] && sleep 3
 				[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
 			fi
+			}
 			if [ "$check" == "200" ] ; then
-				logger -t "【ss-redir】" "check_ip 检查 SS 服务器 $action_port 代理连接 $ss_link_1 成功"
+				hash check_network 2>/dev/null && logger -t "【ss-redir】" "check_ip 检查 SS 服务器 $action_port 代理连接 www.163.com 成功"
+				hash check_network 2>/dev/null || logger -t "【ss-redir】" "check_ip 检查 SS 服务器 $action_port 代理连接 $ss_link_1 成功"
 				checkip=1
 			else
-				logger -t "【ss-redir】" "check_ip 检查 SS 服务器 $action_port 代理连接 $ss_link_1 失败"
+				hash check_network 2>/dev/null && logger -t "【ss-redir】" "check_ip 检查 SS 服务器 $action_port 代理连接 www.163.com 失败"
+				hash check_network 2>/dev/null || logger -t "【ss-redir】" "check_ip 检查 SS 服务器 $action_port 代理连接 $ss_link_1 失败"
 				[ ${action_port:=1090} ] && [ $action_port == 1091 ] && Server=1090 || Server=1091
 				#加上切换标记
 				nvram set ss_working_port=$Server
@@ -406,15 +441,40 @@ if [ "$ss_check" = "1" ] ; then
 		logger -t "【ss-redir】" "check_ip 检查两个 SS 服务器代理连接失败, 请检查配置, 10 秒后重启shadowsocks"
 		killall ss-local ss-redir
 		sleep 10
-		/etc/storage/ez_buttons_script.sh cleanss & 
+		clean_SS 
 		exit 0
 	fi
 fi
 }
 
+start_dnsproxy()
+{
+
+logger -t "【SS】" "启动 dnsproxy 防止域名污染"
+pidof dnsproxy >/dev/null 2>&1 && killall dnsproxy && killall -9 dnsproxy 2>/dev/null
+pidof pdnsd >/dev/null 2>&1 && killall pdnsd && killall -9 pdnsd 2>/dev/null
+if [ -s /sbin/dnsproxy ] ; then
+	/sbin/dnsproxy -d
+else
+	dnsproxy -d
+fi
+}
+
 start_pdnsd()
 {
+if [ "$ss_dnsproxy_x" = "0" ] ; then
+	hash dnsproxy 2>/dev/null && dnsproxy_x="1"
+	hash dnsproxy 2>/dev/null || dnsproxy_x="0"
+	if [ "$dnsproxy_x" = "1" ] ; then
+		start_dnsproxy
+		return
+	else
+		ss_dnsproxy_x=1 && nvram set ss_dnsproxy_x=1
+	fi
+fi
+if [ "$ss_dnsproxy_x" = "1" ] ; then
 logger -t "【SS】" "启动 pdnsd 防止域名污染"
+pidof dnsproxy >/dev/null 2>&1 && killall dnsproxy && killall -9 dnsproxy 2>/dev/null
 pidof pdnsd >/dev/null 2>&1 && killall pdnsd && killall -9 pdnsd 2>/dev/null
 pdnsd_conf="/etc/storage/pdnsd.conf"
 if [ ! -f "$pdnsd_conf" ] || [ ! -s "$pdnsd_conf" ] ; then
@@ -464,7 +524,10 @@ if ! test -f "$CACHE"; then
 	chown -R $USER.$GROUP $CACHEDIR
 fi
 pdnsd -c $pdnsd_conf -p /var/run/pdnsd.pid &
-
+fi
+if [ "$ss_dnsproxy_x" = "2" ] ; then
+	logger -t "【SS】" "使用 dnsmasq ，请开启 ChinaDNS 防止域名污染"
+fi
 }
 
 
@@ -529,7 +592,7 @@ ipset -! -N gfwlist iphash
 ipset -! -N cflist iphash
 
 # rules规则
-ipset -! restore <<-EOF || return 1
+ipset -! restore <<-EOF
 create ss_spec_src_ac hash:ip hashsize 64
 create ss_spec_src_bp hash:ip hashsize 64
 create ss_spec_src_fw hash:ip hashsize 64
@@ -640,6 +703,35 @@ iptables -t nat -N SS_SPEC_WAN_DG
 iptables -t nat -A SS_SPEC_WAN_DG -m set --match-set ss_spec_dst_sp dst -j RETURN
 iptables -t nat -A SS_SPEC_WAN_DG -p tcp $EXT_ARGS_TCP -j SS_SPEC_WAN_AC
 iptables -t nat -I OUTPUT $wifidognx -p tcp -j SS_SPEC_WAN_DG
+
+if [ "$koolproxy_enable" != "0" ] ; then
+# 加载 kp过滤方案 规则
+logger -t "【SS】" "设置内网(LAN)访问控制【kp过滤方案】"
+grep -v '^#' /etc/storage/shadowsocks_ss_spec_lan.sh | sort -u | grep -v "^$" | sed s/！/!/g > /tmp/ss_spec_lan.txt
+while read line
+do
+for host in $line; do
+    case "${host:0:1}" in
+        1|1)
+            iptables -t nat -I SS_SPEC_WAN_DG 2 -p tcp -m mark --mark $(echo ${host:2} | awk -F "." '{printf ("0x%02x", $1)} {printf ("%02x", $2)} {printf ("%02x", $3)} {printf ("00/0xffffff00\n")}') $EXT_ARGS_TCP -j SS_SPEC_WAN_CHN
+            ;;
+        2|2)
+            iptables -t nat -I SS_SPEC_WAN_DG 2 -p tcp -m mark --mark $(echo ${host:2} | awk -F "." '{printf ("0x%02x", $1)} {printf ("%02x", $2)} {printf ("%02x", $3)} {printf ("00/0xffffff00\n")}') $EXT_ARGS_TCP -j SS_SPEC_WAN_GFW
+            ;;
+        n|N)
+            iptables -t nat -I SS_SPEC_WAN_DG 2 -p tcp -m mark --mark $(echo ${host:2} | awk -F "." '{printf ("0x%02x", $1)} {printf ("%02x", $2)} {printf ("%02x", $3)} {printf ("00/0xffffff00\n")}') $EXT_ARGS_TCP -j SS_SPEC_WAN_AC
+            ;;
+        g|G)
+            iptables -t nat -I SS_SPEC_WAN_DG 2 -p tcp -m mark --mark $(echo ${host:2} | awk -F "." '{printf ("0x%02x", $1)} {printf ("%02x", $2)} {printf ("%02x", $3)} {printf ("00/0xffffff00\n")}') $EXT_ARGS_TCP -j SS_SPEC_WAN_FW
+            ;;
+        b|B)
+            iptables -t nat -I SS_SPEC_WAN_DG 2 -p tcp -m mark --mark $(echo ${host:2} | awk -F "." '{printf ("0x%02x", $1)} {printf ("%02x", $2)} {printf ("%02x", $3)} {printf ("00/0xffffff00\n")}') -j RETURN
+            ;;
+    esac
+done
+done < /tmp/ss_spec_lan.txt
+fi
+
 # 加载 mangle 规则
 echo "ss_upd_rules:$ss_upd_rules"
 EXT_ARGS_UDP="$ss_upd_rules"
@@ -658,7 +750,7 @@ if [ "$ss_udp_enable" == 1 ] ; then
 	iptables -t mangle -A SS_SPEC_WAN_FW -p udp -j TPROXY --on-port $ss_working_port --tproxy-mark 0x01/0x01
 fi
 # 加载 pdnsd 规则
-logger -t "【SS】" "pdnsd 模式:$ss_pdnsd_wo_redir, 0走代理 1直连"
+logger -t "【SS】" "DNS程序 $ss_dnsproxy_x 模式: $ss_pdnsd_wo_redir 【0走代理 1直连】"
 echo "ss_pdnsd_wo_redir:$ss_pdnsd_wo_redir"
 if [ "$ss_pdnsd_wo_redir" == 0 ] ; then
 	# pdnsd 0走代理
@@ -673,6 +765,8 @@ fi
 
 # 外网(WAN)访问控制
 	logger -t "【SS】" "外网(WAN)访问控制，设置 WAN IP 转发或忽略代理中转"
+	sed -e '/.*opt.cn2k.net/d' -i /etc/storage/shadowsocks_ss_spec_wan.sh
+	echo "WAN!opt.cn2k.net" >> /etc/storage/shadowsocks_ss_spec_wan.sh
 	grep -v '^#' /etc/storage/shadowsocks_ss_spec_wan.sh | sort -u | grep -v "^$" | sed s/！/!/g > /tmp/ss_spec_wan.txt
 	rm -f /tmp/ss/wantoss.list
 	rm -f /tmp/ss/wannoss.list
@@ -682,15 +776,15 @@ fi
 	if [ ! -z "$del_line" ] ; then
 		del_line=`echo $del_line | sed s/WAN@//g` #WAN@开头的 域名 使用 代理中转
 		/usr/bin/resolveip -4 -t 4 $del_line | grep -v :  > /tmp/ss/tmp.list
-		[ ! -s /tmp/ss/tmp.list ] && nslookup $del_line | tail -n +3 | grep "Address" | awk '{print $3}'| grep -v ":"  >> /tmp/ss/wantoss.list
-		[ -s /tmp/ss/tmp.list ] && cat /tmp/ss/tmp.list >> /tmp/ss/wantoss.list && echo "" > /tmp/ss/tmp.list
+		[ ! -s /tmp/ss/tmp.list ] && arNslookup $del_line | sort -u | grep -v "^$"  >> /tmp/ss/wantoss.list
+		[ -s /tmp/ss/tmp.list ] && cat /tmp/ss/tmp.list| sort -u | grep -v "^$" >> /tmp/ss/wantoss.list && echo "" > /tmp/ss/tmp.list
 	fi
 	add_line=`echo $line |grep "WAN!"`
 	if [ ! -z "$add_line" ] ; then
 		add_line=`echo $add_line | sed s/WAN!//g` #WAN!开头的 域名 忽略 代理中转
 		/usr/bin/resolveip -4 -t 4 $add_line | grep -v :  > /tmp/ss/tmp.list
-		[ ! -s /tmp/ss/tmp.list ] && nslookup $add_line | tail -n +3 | grep "Address" | awk '{print $3}'| grep -v ":"  >> /tmp/ss/wannoss.list
-		[ -s /tmp/ss/tmp.list ] && cat /tmp/ss/tmp.list >> /tmp/ss/wannoss.list && echo "" > /tmp/ss/tmp.list
+		[ ! -s /tmp/ss/tmp.list ] && arNslookup $add_line | sort -u | grep -v "^$"  >> /tmp/ss/wannoss.list
+		[ -s /tmp/ss/tmp.list ] && cat /tmp/ss/tmp.list| sort -u | grep -v "^$" >> /tmp/ss/wannoss.list && echo "" > /tmp/ss/tmp.list
 	fi
 		net_line=`echo $line |grep "WAN+"`
 	if [ ! -z "$net_line" ] ; then
@@ -750,27 +844,74 @@ EOF
 
 }
 
+arNslookup() {
+mkdir -p /tmp/arNslookup
+nslookup $1 | tail -n +3 | grep "Address" | awk '{print $3}'| grep -v ":" > /tmp/arNslookup/$$ &
+I=5
+while [ ! -s /tmp/arNslookup/$$ ] ; do
+		I=$(($I - 1))
+		[ $I -lt 0 ] && break
+		sleep 1
+done
+if [ -s /tmp/arNslookup/$$ ] ; then
+cat /tmp/arNslookup/$$ | sort -u | grep -v "^$"
+rm -f /tmp/arNslookup/$$
+else
+	curltest=`which curl`
+	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+		Address=`wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g
+		fi
+	else
+		Address=`curl -k http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g
+		fi
+	fi
+fi
+}
+
+if [ "$ss_enable" != "0" ] ; then
+	kcptun_server=`nvram get kcptun_server`
+	if [ "$kcptun_enable" != "0" ] ; then
+		resolveip=`/usr/bin/resolveip -4 -t 4 $kcptun_server | grep -v : | sed -n '1p'`
+		[ -z "$resolveip" ] && resolveip=`arNslookup $kcptun_server | sed -n '1p'` 
+		kcptun_server=$resolveip
+	fi
+fi
+
 gen_special_purpose_ip() {
 #处理肯定不走通道的目标网段
 lan_ipaddr=`nvram get lan_ipaddr`
 kcptun_enable=`nvram get kcptun_enable`
-kcptun_enable=${kcptun_enable:-"0"}
+[ -z $kcptun_enable ] && kcptun_enable=0 && nvram set kcptun_enable=0
 kcptun_server=`nvram get kcptun_server`
 if [ "$kcptun_enable" != "0" ] && [ -z "$kcptun_server" ] ; then
 resolveip=`/usr/bin/resolveip -4 -t 4 $kcptun_server | grep -v : | sed -n '1p'`
-[ -z "$resolveip" ] && resolveip=`nslookup $kcptun_server | awk 'NR==5{print $3}'` 
+[ -z "$resolveip" ] && resolveip=`arNslookup $kcptun_server | sed -n '1p'` 
 kcptun_server=$resolveip
 fi
 [ "$kcptun_enable" = "0" ] && kcptun_server=""
 if [ "$ss_enable" != "0" ] && [ -z "$ss_s1_ip" ] ; then
+if [ -z $(echo $ss_server1 | grep : | grep -v "\.") ] ; then 
 resolveip=`/usr/bin/resolveip -4 -t 4 $ss_server1 | grep -v : | sed -n '1p'`
-[ -z "$resolveip" ] && resolveip=`nslookup $ss_server1 | awk 'NR==5{print $3}'` 
+[ -z "$resolveip" ] && resolveip=`arNslookup $ss_server1 | sed -n '1p'` 
 ss_s1_ip=$resolveip
+else
+# IPv6
+ss_s1_ip=$ss_server1
+fi
 fi
 if [ ! -z "$ss_server2" ] ; then
+if [ -z $(echo $ss_server2 | grep : | grep -v "\.") ] ; then 
 resolveip=`/usr/bin/resolveip -4 -t 4 $ss_server2 | grep -v : | sed -n '1p'`
-[ -z "$resolveip" ] && resolveip=`nslookup $ss_server2 | awk 'NR==5{print $3}'` 
+[ -z "$resolveip" ] && resolveip=`arNslookup $ss_server2 | sed -n '1p'` 
 ss_s2_ip=$resolveip
+else
+# IPv6
+ss_s2_ip=$ss_server2
+fi
 fi
 	cat <<-EOF | grep -E "^([0-9]{1,3}\.){3}[0-9]{1,3}"
 0.0.0.0/8
@@ -796,6 +937,8 @@ fi
 100.100.100.100
 188.188.188.188
 110.110.110.110
+104.160.185.171
+$lan_ipaddr
 $ss_s1_ip
 $ss_s2_ip
 $kcptun_server
@@ -951,7 +1094,7 @@ if [ "$ss_updatess" = "0" ] || [ "$ss_updatess2" = "1" ] ; then
 	if [ "$ss_3p_enable" = "1" ] ; then
 		if [ "$ss_3p_gfwlist" = "1" ] ; then
 			logger -t "【SS】" "正在获取官方 gfwlist...."
-			wgetcurl.sh /tmp/ss/gfwlist.b64 https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt
+			wgetcurl.sh /tmp/ss/gfwlist.b64 https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt https://raw.githubusercontent.com/gfwlist/gfwlist/master/gfwlist.txt N
 			base64 -d  /tmp/ss/gfwlist.b64 > /tmp/ss/gfwlist.txt
 			cat /tmp/ss/gfwlist.txt | sort -u |
 					sed '/^$\|@@/d'|
@@ -961,20 +1104,21 @@ if [ "$ss_updatess" = "0" ] || [ "$ss_updatess2" = "1" ] ; then
 					grep '^[0-9a-zA-Z\.-]\+$' | grep '\.' | sed 's#^\.\+##'  | sort -u > /tmp/ss/gfwlist_domain.txt
 		fi
 		if [ "$ss_3p_kool" = "1" ] ; then
-			#2 获取koolshare.github.io/maintain_files/gfwlist.conf
+			# 2 获取koolshare.github.io/maintain_files/gfwlist.conf
 			logger -t "【SS】" "正在获取 koolshare 列表...."
-			wgetcurl.sh /tmp/ss/gfwdomain_tmp.txt http://koolshare.github.io/maintain_files/gfwlist.conf
+			wgetcurl.sh /tmp/ss/gfwdomain_tmp.txt https://raw.githubusercontent.com/koolshare/koolshare.github.io/acelan_softcenter_ui/maintain_files/gfwlist.conf https://raw.githubusercontent.com/koolshare/koolshare.github.io/acelan_softcenter_ui/maintain_files/gfwlist.conf N
 			cat /tmp/ss/gfwdomain_tmp.txt | sed 's/ipset=\/\.//g; s/\/gfwlist//g; /^server/d' > /tmp/ss/gfwdomain_1.txt
-			wgetcurl.sh /tmp/ss/gfwdomain_tmp.txt https://raw.githubusercontent.com/koolshare/koolshare.github.io/master/maintain_files/gfwlist.conf
-			cat /tmp/ss/gfwdomain_tmp.txt | sed 's/ipset=\/\.//g; s/\/gfwlist//g; /^server/d' > /tmp/ss/gfwdomain_2.txt
+			# wgetcurl.sh /tmp/ss/gfwdomain_tmp.txt https://raw.githubusercontent.com/koolshare/koolshare.github.io/master/maintain_files/gfwlist.conf https://raw.githubusercontent.com/koolshare/koolshare.github.io/master/maintain_files/gfwlist.conf N
+			# cat /tmp/ss/gfwdomain_tmp.txt | sed 's/ipset=\/\.//g; s/\/gfwlist//g; /^server/d' > /tmp/ss/gfwdomain_2.txt
 		fi
 		rm -rf /tmp/ss/gfwdomain_tmp.txt
+		# /tmp/ss/gfwdomain_1.txt /tmp/ss/gfwdomain_2.txt 、koolshare以及自定义列表
 	fi
-	#合并多个域名列表（自定义域名，GFWLIST，小宝的两个列表）
-	logger -t "【SS】" "根据选项不同，分别会合并固件自带、gfwlist官方、koolshare以及自定义列表...."
+	#合并多个域名列表（自定义域名，GFWLIST，自带的三个列表）
+	logger -t "【SS】" "根据选项不同，分别会合并固件自带、gfwlist官方...."
 	touch /etc/storage/shadowsocks_mydomain_script.sh
 	cat /etc/storage/shadowsocks_mydomain_script.sh | sed '/^$\|#/d' | sed "s/http://g" | sed "s/https://g" | sed "s/\///g" | sort -u > /tmp/ss/gfwdomain_0.txt
-	cat /etc/storage/basedomain.txt /tmp/ss/gfwdomain_0.txt /tmp/ss/gfwdomain_1.txt /tmp/ss/gfwdomain_2.txt /tmp/ss/gfwlist_domain.txt | 
+	cat /etc/storage/basedomain.txt /tmp/ss/gfwdomain_0.txt /tmp/ss/gfwdomain_1.txt /tmp/ss/gfwlist_domain.txt | 
 		sort -u > /tmp/ss/gfwall_domain.txt
 else
 	logger -t "【SS】" "启动时使用 固件内置list规则 列表...."
@@ -1021,7 +1165,7 @@ fi
 if [ "$ss_3p_enable" = "1" ] ; then
 	if [ "$ss_sub1" = "1" ] ; then
 		logger -t "【SS】" "处理订阅列表1...."
-		wgetcurl.sh /tmp/ss/tmp_sub.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/list.txt
+		wgetcurl.sh /tmp/ss/tmp_sub.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/list.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/list.txt N
 		cat /tmp/ss/tmp_sub.txt |
 			sort -u | sed 's/^[[:space:]]*//g; /^$/d; /#/d' |
 			awk '{printf("server=/%s/127.0.0.1#8053\nipset=/%s/gfwlist\n", $1, $1 )}'  > $confdir/r.sub.conf
@@ -1029,7 +1173,7 @@ if [ "$ss_3p_enable" = "1" ] ; then
 	#处理只做dns解释的域名
 	if [ "$ss_sub2" = "1" ] ; then
 		logger -t "【SS】" "处理订阅列表2...."
-		wgetcurl.sh /tmp/ss/tmp_sub.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/dnsonly.txt
+		wgetcurl.sh /tmp/ss/tmp_sub.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/dnsonly.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/dnsonly.txt N
 		cat /tmp/ss/tmp_sub.txt |
 			sort -u | sed 's/^[[:space:]]*//g; /^$/d; /#/d' |
 			awk '{printf("server=/%s/127.0.0.1#8053\n", $1 )}'  >> $confdir/r.sub.conf
@@ -1041,7 +1185,7 @@ if [ "$ss_3p_enable" = "1" ] ; then
 		[ -z "$DNS" ] && DNS="114.114.114.114"
 	awk_cmd="awk '{printf(\"server=/%s/$DNS\\n\", \$1 )}'  >> $confdir/r.sub.conf"
 	#echo $awk_cmd
-	wgetcurl.sh /tmp/ss/tmp_sub.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/passby.txt
+	wgetcurl.sh /tmp/ss/tmp_sub.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/passby.txt https://coding.net/u/bigandy/p/DogcomBooster/git/raw/master/passby.txt N
 		cat /tmp/ss/tmp_sub.txt |
 			sort -u | sed 's/^[[:space:]]*//g; /^$/d; /#/d' |
 			eval $awk_cmd
@@ -1080,8 +1224,8 @@ fi
 	# [ "$ss_mode_x" = "0" ] && [ "$kcptun2_enable" = "1" ] && adbyby_cflist
 	adbyby_cflist
 	logger -t "【SS】" "GFWList update 重启 dnsmasq 更新列表"
-	ipset flush gfwlist
 	restart_dhcpd
+	ipset flush gfwlist
 fi
 
 }
@@ -1110,7 +1254,7 @@ if [ "$ss_updatess" = "0" ] || [ "$ss_updatess2" = "1" ] ; then
 		echo ss_spec_dst_sh
 		# wget --continue --no-check-certificate -O- 'http://ftp.apnic.net/apnic/stats/apnic/delegated-apnic-latest' | awk -F\| '/CN\|ipv4/ { printf("%s/%d\n", $4, 32-log($5)/log(2)) }' > /tmp/ss/chnroute.txt
 		# echo ""  >> /tmp/ss/chnroute.txt
-		wgetcurl.sh /tmp/ss/tmp_chnroute.txt https://raw.githubusercontent.com/17mon/china_ip_list/master/china_ip_list.txt
+		wgetcurl.sh /tmp/ss/tmp_chnroute.txt https://raw.githubusercontent.com/17mon/china_ip_list/master/china_ip_list.txt https://raw.githubusercontent.com/17mon/china_ip_list/master/china_ip_list.txt N
 		cat /tmp/ss/tmp_chnroute.txt > /tmp/ss/chnroute.txt
 		echo ""  >> /tmp/ss/chnroute.txt
 		wgetcurl.sh /tmp/ss/tmp_chnroute.txt "$hiboyfile/chnroute.txt" "$hiboyfile2/chnroute.txt"
@@ -1132,7 +1276,11 @@ fi
 		logger -t "【SS】" "加速国内 dns 访问，模式:$ss_mode_x, pdnsd_all:$ss_pdnsd_all, 下载 accelerated-domains.china.conf"
 		DNS_china=`nvram get wan0_dns |cut -d ' ' -f1`
 		[ -z "$DNS_china" ] && DNS_china="114.114.114.114"
-		wgetcurl.sh /tmp/ss/tmp_accelerated-domains.china.conf "$hiboyfile/accelerated-domains.china.conf" "$hiboyfile2/accelerated-domains.china.conf"
+		if [ ! -s /tmp/ss/accelerated-domains.china.conf ] ; then
+			wgetcurl.sh /tmp/ss/tmp_accelerated-domains.china.conf "$hiboyfile/accelerated-domains.china.conf" "$hiboyfile2/accelerated-domains.china.conf"
+		else
+			[ -s /tmp/ss/accelerated-domains.china.conf ] && mv -f /tmp/ss/accelerated-domains.china.conf /tmp/ss/tmp_accelerated-domains.china.conf
+		fi
 		cat /tmp/ss/tmp_accelerated-domains.china.conf |
 			sort -u | sed 's/^[[:space:]]*//g; /^$/d; /#/d' |
 			sed -e "s|^\(server.*\)/[^/]*$|\1/$DNS_china|" > /tmp/ss/accelerated-domains.china.conf
@@ -1160,7 +1308,7 @@ adbyby_cflist()
 if [ "$ipsets" == 1 ] ; then
 	if [ -s "/tmp/7620adm/adm" ] ; then
 		port=$(iptables -t nat -L | grep 'ports 18309' | wc -l)
-		PIDS=$(ps - w | grep "/tmp/7620adm/adm" | grep -v "grep" | wc -l)
+		PIDS=$(ps -w | grep "/tmp/7620adm/adm" | grep -v "grep" | wc -l)
 		if [ "$port" -ge 1 ] || [ "$PIDS" != 0 ] ; then
 			chmod 777 /tmp/script/_ad_m
 			/tmp/script/_ad_m C &
@@ -1168,7 +1316,7 @@ if [ "$ipsets" == 1 ] ; then
 	fi
 	if [ -s "/tmp/7620koolproxy/koolproxy" ] ; then
 		port=$(iptables -t nat -L | grep 'ports 3000' | wc -l)
-		PIDS=$(ps - w | grep "/tmp/7620koolproxy/koolproxy" | grep -v "grep" | wc -l)
+		PIDS=$(ps -w | grep "/tmp/7620koolproxy/koolproxy" | grep -v "grep" | wc -l)
 		if [ "$port" -ge 1 ] || [ "$PIDS" != 0 ] ; then
 			chmod 777 /tmp/script/_kool_proxy
 			/tmp/script/_kool_proxy C &
@@ -1176,7 +1324,7 @@ if [ "$ipsets" == 1 ] ; then
 	fi
 	if [ -s "/tmp/bin/adbyby" ] ; then
 		port=$(iptables -t nat -L | grep 'ports 8118' | wc -l)
-		PIDS=$(ps - w | grep "/tmp/bin/adbyby" | grep -v "grep" | grep -v "adbybyupdate.sh" | grep -v "adbybyfirst.sh" | wc -l)
+		PIDS=$(ps -w | grep "/tmp/bin/adbyby" | grep -v "grep" | grep -v "adbybyupdate.sh" | grep -v "adbybyfirst.sh" | wc -l)
 		if [ "$port" -ge 1 ] || [ "$PIDS" != 0 ] ; then
 			chmod 777 /tmp/script/_ad_byby
 			/tmp/script/_ad_byby C &
@@ -1189,7 +1337,9 @@ dnsmasq_reconf()
 {
 	#防火墙转发规则加载
 	# for dnsmasq 
-	sed -Ei '/no-resolv|server=|server=127.0.0.1|server=208.67.222.222|dns-forward-max=1000|min-cache-ttl=1800|github/d' /etc/storage/dnsmasq/dnsmasq.conf
+#启动PDNSD防止域名污染
+start_pdnsd
+	sed -Ei '/no-resolv|server=|server=127.0.0.1|dns-forward-max=1000|min-cache-ttl=1800|github/d' /etc/storage/dnsmasq/dnsmasq.conf
 if [ "$ss_mode_x" = "2" ] || [ "$ss_pdnsd_all" = "1" ] ; then 
 #   #方案三
 	cat >> "/etc/storage/dnsmasq/dnsmasq.conf" <<-\EOF
@@ -1199,8 +1349,6 @@ dns-forward-max=1000
 min-cache-ttl=1800
 EOF
 fi
-#启动PDNSD防止域名污染
-start_pdnsd
 sed -Ei '/github/d' /etc/storage/dnsmasq/dnsmasq.conf
 cat >> "/etc/storage/dnsmasq/dnsmasq.conf" <<-\_CONF
 server=/githubusercontent.com/127.0.0.1#8053
@@ -1212,23 +1360,50 @@ restart_dhcpd
 
 start_SS()
 {
-	restart_dhcpd
 	logger -t "【SS】" "启动 SS"
 	nvram set ss_internet="2"
 	optssredir="0"
+if [ "$ss_type" != "1" ] ; then
+# SS
 if [ "$ss_mode_x" != "3" ] ; then
 	hash ss-redir 2>/dev/null || optssredir="1"
 else
 	hash ss-local 2>/dev/null || optssredir="2"
 fi
+check_ss_plugin=`echo $ss_plugin_config |  grep obfs-local`
+check_ss_plugin2=`echo $ss2_plugin_config |  grep obfs-local`
+if [ ! -z "$check_ss_plugin" ] || [ ! -z "$check_ss_plugin2" ]; then
+	hash obfs-local 2>/dev/null || optssredir="4"
+fi
+# SS
+fi
+
+if [ "$ss_type" = "1" ] ; then
+# SSR
+if [ "$ss_mode_x" != "3" ] ; then
+	hash ssr-redir 2>/dev/null || optssredir="1"
+else
+	hash ssr-local 2>/dev/null || optssredir="2"
+fi
+# SSR
+fi
+
+if [ "$ss_dnsproxy_x" = "0" ] ; then
+hash dnsproxy 2>/dev/null || optssredir="5"
+elif [ "$ss_dnsproxy_x" = "1" ] ; then
+hash pdnsd 2>/dev/null || optssredir="5"
+fi
 [ "$ss_run_ss_local" = "1" ] && { hash ss-local 2>/dev/null || optssredir="3" ; }
 if [ "$optssredir" != "0" ] ; then
 	# 找不到ss-redir，安装opt
-	logger -t "【SS】" "找不到 ss-redir 或 ss-local 下载程序"
+	logger -t "【SS】" "找不到 ss-redir 、 ss-local 或 obfs-local ，挂载opt"
 	/tmp/script/_mountopt start
 	initopt
 fi
 optssredir="0"
+
+if [ "$ss_type" != "1" ] ; then
+# SS
 if [ "$ss_mode_x" != "3" ] ; then
 	hash ss-redir 2>/dev/null || rm -rf /opt/bin/ss-redir
 	hash ss-redir 2>/dev/null || optssredir="1"
@@ -1241,16 +1416,81 @@ if [ "$ss_run_ss_local" = "1" ] ; then
 fi
 if [ "$optssredir" = "1" ] ; then
 	logger -t "【SS】" "找不到 ss-redir. opt下载程序"
-	wgetcurl.sh "/opt/bin/ss-redir" "$hiboyfile/ss-redir" "$hiboyfile2/ss-redir"
+	[ ! s /opt/bin/ss-redir ] && wgetcurl.sh "/opt/bin/ss-redir" "$hiboyfile/ss-redir" "$hiboyfile2/ss-redir"
 	chmod 777 "/opt/bin/ss-redir"
-hash ss-redir 2>/dev/null || { logger -t "【SS】" "找不到 ss-redir, 请检查系统"; nvram set ss_status=00 && nvram commit; eval "$scriptfilepath start &"; exit 1; }
+hash ss-redir 2>/dev/null || { logger -t "【SS】" "找不到 ss-redir, 请检查系统"; ss_restart x ; }
 fi
 if [ "$optssredir" = "2" ] || [ "$optssredir" = "3" ]; then
 	logger -t "【SS】" "找不到 ss-local. opt 下载程序"
-	wgetcurl.sh "/opt/bin/ss-local" "$hiboyfile/ss-local" "$hiboyfile2/ss-local"
+	[ ! s /opt/bin/ss-local ] && wgetcurl.sh "/opt/bin/ss-local" "$hiboyfile/ss-local" "$hiboyfile2/ss-local"
 	chmod 777 "/opt/bin/ss-local"
-	hash ss-local 2>/dev/null || { logger -t "【SS】" "找不到 ss-local, 请检查系统"; nvram set ss_status=00 && nvram commit; eval "$scriptfilepath start &"; exit 1; }
+	hash ss-local 2>/dev/null || { logger -t "【SS】" "找不到 ss-local, 请检查系统"; ss_restart x ; }
 fi
+if [ ! -z "$check_ss_plugin" ] || [ ! -z "$check_ss_plugin2" ]; then
+	hash obfs-local 2>/dev/null || optssredir="4"
+fi
+if [ "$optssredir" = "4" ] ; then
+	logger -t "【SS】" "找不到 obfs-local. opt 下载程序"
+	wgetcurl.sh "/opt/bin/obfs-local" "$hiboyfile/obfs-local" "$hiboyfile2/obfs-local"
+	chmod 777 "/opt/bin/obfs-local"
+	hash obfs-local 2>/dev/null || { logger -t "【SS】" "找不到 obfs-local, 请检查系统"; ss_restart x ; }
+fi
+# SS
+fi
+
+if [ "$ss_type" = "1" ] ; then
+# SSR
+if [ "$ss_mode_x" != "3" ] ; then
+	hash ssr-redir 2>/dev/null || rm -rf /opt/bin/ssr-redir
+	hash ssr-redir 2>/dev/null || optssredir="1"
+else
+	hash ssr-local 2>/dev/null || rm -rf /opt/bin/ssr-local
+	hash ssr-local 2>/dev/null || optssredir="2"
+fi
+if [ "$ss_run_ss_local" = "1" ] ; then
+	hash ssr-local 2>/dev/null || optssredir="3"
+fi
+if [ "$optssredir" = "1" ] ; then
+	[ ! s /opt/bin/ssr-redir ] && wgetcurl.sh "/opt/bin/ssr-redir" "$hiboyfile/ssr-redir" "$hiboyfile2/ssr-redir"
+	chmod 777 "/opt/bin/ssr-redir"
+hash ssr-redir 2>/dev/null || { logger -t "【SS】" "找不到 ssr-redir, 请检查系统"; ss_restart x ; }
+fi
+if [ "$optssredir" = "2" ] || [ "$optssredir" = "3" ]; then
+	[ ! s /opt/bin/ssr-local ] && wgetcurl.sh "/opt/bin/ssr-local" "$hiboyfile/ssr-local" "$hiboyfile2/ssr-local"
+	chmod 777 "/opt/bin/ssr-local"
+	hash ssr-local 2>/dev/null || { logger -t "【SS】" "找不到 ssr-local, 请检查系统"; ss_restart x ; }
+fi
+# SSR
+fi
+
+if [ "$ss_dnsproxy_x" = "0" ] ; then
+hash dnsproxy 2>/dev/null && dnsproxy_x="1"
+hash dnsproxy 2>/dev/null || dnsproxy_x="0"
+if [ "$dnsproxy_x" = "0" ] ; then
+	logger -t "【SS】" "找不到 dnsproxy. opt ，挂载opt"
+	/tmp/script/_mountopt start
+	initopt
+	if [ ! -s /opt/bin/dnsproxy ] ; then
+		wgetcurl.sh "/opt/bin/dnsproxy" "$hiboyfile/dnsproxy" "$hiboyfile2/dnsproxy"
+		chmod 777 "/opt/bin/dnsproxy"
+	fi
+	hash dnsproxy 2>/dev/null || { logger -t "【SS】" "找不到 dnsproxy, 请检查系统"; ss_restart x ; }
+fi
+elif [ "$ss_dnsproxy_x" = "1" ] ; then
+hash pdnsd 2>/dev/null && dnsproxy_x="1"
+hash pdnsd 2>/dev/null || dnsproxy_x="0"
+if [ "$dnsproxy_x" = "0" ] ; then
+	logger -t "【SS】" "找不到 pdnsd. opt ，挂载opt"
+	/tmp/script/_mountopt start
+	initopt
+	if [ ! -s /opt/bin/pdnsd ] ; then
+		wgetcurl.sh "/opt/bin/pdnsd" "$hiboyfile/pdnsd" "$hiboyfile2/pdnsd"
+		chmod 777 "/opt/bin/pdnsd"
+	fi
+	hash pdnsd 2>/dev/null || { logger -t "【SS】" "找不到 pdnsd, 请检查系统"; ss_restart x ; }
+fi
+fi
+
 check_ssr
 echo "Debug: $DNS_Server"
 	rm -f /tmp/cron_ss.lock
@@ -1260,6 +1500,7 @@ echo "Debug: $DNS_Server"
 		logger -t "【ss-local】" "启动. 可以配合 Proxifier、chrome(switchysharp、SwitchyOmega) 代理插件使用."
 		logger -t "【ss-local】" "shadowsocks 进程守护启动"
 		ss_cron_job
+		#ss_get_status
 		eval "$scriptfilepath keep &"
 		exit 0
 	fi
@@ -1268,25 +1509,40 @@ echo "Debug: $DNS_Server"
 	start_ss_rules
 	sleep 1
 	nvram set ss_updatess2=0
-	update_chnroutes
 	update_gfwlist
+	update_chnroutes
 	nvram set ss_updatess2=1
 	#检查网络
 	logger -t "【SS】" "SS 检查网络连接"
 	sleep 1
+	hash check_network 2>/dev/null && {
+	check_link="www.163.com"
+	check_network 3
+	[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+		if [ "$check" == "404" ] ; then
+			check_network 3
+			[ "$?" == "0" ] && check=200 || check=404
+		fi
+	}
+	hash check_network 2>/dev/null || check=404
+	[ "$check" == "404" ] && {
+	check_link="$ss_link_1"
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		wget --continue --no-check-certificate -s -q -T 10 $ss_link_1
-		[ "$?" == "0" ] && check=200 || { check=404; restart_dhcpd && sleep 3; }
-		[ "$check" == "404" ] && wget --continue --no-check-certificate -s -q -T 10 $ss_link_1
-		[ "$check" == "404" ] && [ "$?" == "0" ] && check=200 || check=404
+		wget --continue --no-check-certificate -q -T 10 "$ss_link_1" -O /dev/null
+		[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+		if [ "$check" == "404" ] ; then
+			wget --continue --no-check-certificate -q -T 10 "$ss_link_1" -O /dev/null
+			[ "$?" == "0" ] && check=200 || check=404
+		fi
 	else
 		check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
-		[ "$check" != "200" ] && restart_dhcpd && sleep 3
+		[ "$check" != "200" ] && sleep 3
 		[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
 	fi
+	}
 if [ "$check" != "200" ] ; then 
-	logger -t "【SS】" "连 $ss_link_1 的域名都解析不了, 你的网络能用？？"
+	logger -t "【SS】" "连 $check_link 的域名都解析不了, 你的网络能用？？"
 	logger -t "【SS】" "SS 网络连接有问题, 请更新 opt 文件夹、检查 U盘 文件和 SS 设置"
 	clean_SS
 fi
@@ -1299,6 +1555,13 @@ fi
 	logger -t "【SS】" "shadowsocks 进程守护启动"
 	nvram set ss_internet="1"
 	ss_cron_job
+	#ss_get_status
+if [ "$ss_dnsproxy_x" = "2" ] ; then
+	logger -t "【SS】" "使用 dnsmasq ，请开启 ChinaDNS 防止域名污染"
+	if [ ! -f "/etc/storage/script/Sh19_chinadns.sh" ] || [ ! -s "/etc/storage/script/Sh19_chinadns.sh" ] ; then
+		/etc/storage/script/Sh19_chinadns.sh &
+	fi
+fi
 eval "$scriptfilepath keep &"
 }
 
@@ -1306,7 +1569,21 @@ eval "$scriptfilepath keep &"
 
 clean_SS()
 {
-/etc/storage/ez_buttons_script.sh cleanss &
+# 重置 SS IP 规则文件并重启 SS
+logger -t "【SS】" "重置 SS IP 规则文件并重启 SS"
+stop_SS
+sed -Ei '/adbyby_host.conf|cflist.conf|AiDisk_00|server=/d' /etc/storage/dnsmasq/dnsmasq.conf
+sed -Ei '/no-resolv|server=|dns-forward-max=1000|min-cache-ttl=1800|accelerated-domains|github/d' /etc/storage/dnsmasq/dnsmasq.conf
+rm -f /tmp/ss/dnsmasq.d/*
+restart_dhcpd
+rm -rf /etc/storage/china_ip_list.txt /etc/storage/basedomain.txt /tmp/ss/*
+[ ! -f /etc/storage/china_ip_list.txt ] && tar -xzvf /etc_ro/china_ip_list.tgz -C /tmp && ln -sf /tmp/china_ip_list.txt /etc/storage/china_ip_list.txt
+[ ! -f /etc/storage/basedomain.txt ] && tar -xzvf /etc_ro/basedomain.tgz -C /tmp && ln -sf /tmp/basedomain.txt /etc/storage/basedomain.txt
+nvram set kcptun_status="cleanss"
+nvram set ss_status="cleanss"
+/tmp/script/_kcp_tun &
+sleep 1
+ss_restart $1
 exit 0
 }
 
@@ -1321,13 +1598,13 @@ ss_working_port=`nvram get ss_working_port`
 sed -Ei '/no-resolv|server=|dns-forward-max=1000|min-cache-ttl=1800|accelerated-domains|github|ipip.net/d' /etc/storage/dnsmasq/dnsmasq.conf
 restart_dhcpd
 clean_ss_rules
-killall ss-redir ssr-redir ss-local ssr-local ss-tunnel pdnsd sh_sskeey_k.sh obfs-local
-killall -9 ss-redir ssr-redir ss-local ssr-local ss-tunnel pdnsd sh_sskeey_k.sh obfs-local
+killall ss-redir ssr-redir ss-local ssr-local ss-tunnel pdnsd dnsproxy sh_sskeey_k.sh obfs-local
+killall -9 ss-redir ssr-redir ss-local ssr-local ss-tunnel pdnsd dnsproxy sh_sskeey_k.sh obfs-local
 rm -f /tmp/sh_sskeey_k.sh
 rm -f $confdir/r.gfwlist.conf
 rm -f $confdir/r.sub.conf
 rm -f $confdir/r.adhost.conf
-rm -f $confdir/accelerated-domains.china.conf
+#rm -f $confdir/accelerated-domains.china.conf
 [ -f /opt/etc/init.d/S24chinadns ] && { rm -f /var/log/chinadns.lock; /opt/etc/init.d/S24chinadns stop& }
 [ -f /opt/etc/init.d/S26pdnsd ] && { rm -f /var/log/pdnsd.lock; /opt/etc/init.d/S26pdnsd stop& }
 [ -f /opt/etc/init.d/S27pcap-dnsproxy ] && { rm -f /var/log/pcap-dnsproxy.lock; /opt/etc/init.d/S27pcap-dnsproxy stop& }
@@ -1335,13 +1612,52 @@ nvram set gfwlist3="ss-redir stop."
 /etc/storage/ez_buttons_script.sh 3 &
 umount -l /usr/sbin/ss-redir
 umount -l /usr/sbin/ss-local
-eval $(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1;}')
+eval $(ps -w | grep "_ss keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "_ss.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
 }
 
-check_setting()
-{
+ss_restart () {
+
+relock="/var/lock/ss_restart.lock"
+if [ "$1" = "o" ] ; then
+	nvram set ss_renum="0"
+	[ -f $relock ] && rm -f $relock
+	return 0
+fi
+if [ "$1" = "x" ] ; then
+	if [ -f $relock ] ; then
+		logger -t "【ss】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		exit 0
+	fi
+	ss_renum=${ss_renum:-"0"}
+	ss_renum=`expr $ss_renum + 1`
+	nvram set ss_renum="$ss_renum"
+	if [ "$ss_renum" -gt "2" ] ; then
+		I=19
+		echo $I > $relock
+		logger -t "【ss】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		while [ $I -gt 0 ]; do
+			I=$(($I - 1))
+			echo $I > $relock
+			sleep 60
+			[ "$(nvram get ss_renum)" = "0" ] && exit 0
+			[ $I -lt 0 ] && break
+		done
+		nvram set ss_renum="0"
+	fi
+	[ -f $relock ] && rm -f $relock
+fi
+nvram set ss_status=0
+eval "$scriptfilepath &"
+sleep 5
+exit 0
+}
+
+ss_get_status () {
+
 A_restart=`nvram get ss_status`
-B_restart="$ss_enable$ss_link_1$ss_link_2$ss_update$ss_update_hour$ss_update_min$lan_ipaddr$ss_updatess$ss_DNS_Redirect$ss_DNS_Redirect_IP$ss_DNS_Redirect$ss_type$ss_check$ss_run_ss_local$ss_s1_local_address$ss_s2_local_address$ss_s1_local_port$ss_s2_local_port$ss_server1$ss_server2$ss_s1_port$ss_s2_port$ss_s1_method$ss_s2_method$ss_s1_key$ss_s2_key$ss_pdnsd_wo_redir$ss_mode_x$ss_multiport$ss_sub4$ss_sub1$ss_sub2$ss_sub3$ss_upd_rules$ss_plugin_config$ss2_plugin_config$ss_usage$ss_s2_usage$ss_usage_json$ss_s2_usage_json$ss_tochina_enable$ss_udp_enable$LAN_AC_IP$ss_3p_enable$ss_3p_gfwlist$ss_3p_kool$ss_pdnsd_all$kcptun_server$ss_xbox`nvram get wan0_dns |cut -d ' ' -f1`$(cat /etc/storage/shadowsocks_ss_spec_lan.sh /etc/storage/shadowsocks_ss_spec_wan.sh /etc/storage/shadowsocks_mydomain_script.sh | grep -v '^#' | grep -v "^$")"
+B_restart="$ss_enable$ss_dnsproxy_x$ss_link_1$ss_link_2$ss_update$ss_update_hour$ss_update_min$lan_ipaddr$ss_updatess$ss_DNS_Redirect$ss_DNS_Redirect_IP$ss_type$ss_check$ss_run_ss_local$ss_s1_local_address$ss_s2_local_address$ss_s1_local_port$ss_s2_local_port$ss_server1$ss_server2$ss_s1_port$ss_s2_port$ss_s1_method$ss_s2_method$ss_s1_key$ss_s2_key$ss_pdnsd_wo_redir$ss_mode_x$ss_multiport$ss_sub4$ss_sub1$ss_sub2$ss_sub3$ss_upd_rules$ss_plugin_config$ss2_plugin_config$ss_usage$ss_s2_usage$ss_usage_json$ss_s2_usage_json$ss_tochina_enable$ss_udp_enable$LAN_AC_IP$ss_3p_enable$ss_3p_gfwlist$ss_3p_kool$ss_pdnsd_all$kcptun_server$ss_xbox`nvram get wan0_dns |cut -d ' ' -f1`$(cat /etc/storage/shadowsocks_ss_spec_lan.sh /etc/storage/shadowsocks_ss_spec_wan.sh /etc/storage/shadowsocks_mydomain_script.sh | grep -v '^#' | grep -v "^$")"
 B_restart=`echo -n "$B_restart" | md5sum | sed s/[[:space:]]//g | sed s/-//g`
 if [ "$A_restart" != "$B_restart" ] ; then
 	nvram set ss_status=$B_restart
@@ -1350,19 +1666,19 @@ if [ "$A_restart" != "$B_restart" ] ; then
 else
 	needed_restart=0
 fi
+}
+
+check_setting()
+{
+
+ss_get_status
 if [ "$ss_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "`pidof ss-redir`" ] && logger -t "【SS】" "停止 ss-redir" && stop_SS
 	[ ! -z "`pidof ss-local`" ] && logger -t "【SS】" "停止 ss-local" && stop_SS
-	{ eval $(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1;}'); exit 0; }
+	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
 fi
 if [ "$ss_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
-		if [ "$ss_mode_x" != "3" ] ; then
-			optssredir="0"
-			hash ss-redir 2>/dev/null || {  logger -t "【SS】" "找不到, 需要安装 ss-redir"; optssredir=1; }
-			hash pdnsd 2>/dev/null || { logger -t "【SS】" "找不到, 需要安装 pdnsd"; optssredir=1; }
-			[ "$optssredir" = "1" ] && sleep 10 && { nvram set ss_status=00; eval "$scriptfilepath &"; exit 0; }
-		fi
 		[ $ss_server1 ] || logger -t "【SS】" "服务器地址:未填写"
 		[ $ss_s1_port ] || logger -t "【SS】" "服务器端口:未填写"
 		[ $ss_s1_method ] || logger -t "【SS】" "加密方式:未填写"
@@ -1371,8 +1687,10 @@ if [ "$ss_enable" = "1" ] ; then
 		stop_SS
 		start_SS
 	else
-		[ "$ss_mode_x" = "3" ] && { [ -z "`pidof ss-local`" ] || [ ! -s "`which ss-local`" ] && nvram set ss_status=00 && { eval "$scriptfilepath start &"; exit 0; } ; }
-		[ "$ss_mode_x" != "3" ] && { [ -z "`pidof ss-redir`" ] || [ ! -s "`which ss-redir`" ] || [ ! -s "`which pdnsd`" ] && nvram set ss_status=00 && { eval "$scriptfilepath start &"; exit 0; } ; }
+		[ "$ss_mode_x" = "3" ] && { [ -z "`pidof ss-local`" ] || [ ! -s "`which ss-local`" ] && ss_restart ; }
+		[ "$ss_dnsproxy_x" = "0" ] && [ "$ss_mode_x" != "3" ] && { [ -z "`pidof ss-redir`" ] || [ ! -s "`which ss-redir`" ] || [ ! -s "`which dnsproxy`" ] && ss_restart ; }
+		[ "$ss_dnsproxy_x" = "1" ] && [ "$ss_mode_x" != "3" ] && { [ -z "`pidof ss-redir`" ] || [ ! -s "`which ss-redir`" ] || [ ! -s "`which pdnsd`" ] && ss_restart ; }
+		[ "$ss_dnsproxy_x" = "2" ] && [ "$ss_mode_x" != "3" ] && { [ -z "`pidof ss-redir`" ] || [ ! -s "`which ss-redir`" ] && ss_restart ; }
 		if [ -n "`pidof ss-redir`" ] && [ "$ss_enable" = "1" ] && [ "$ss_mode_x" != "3" ] ; then
 			port=$(iptables -t nat -L | grep 'SS_SPEC' | wc -l)
 			if [ "$port" = 0 ] ; then
@@ -1391,8 +1709,8 @@ cat > "/tmp/sh_sskeey_k.sh" <<-SSMK
 sleep 919
 ss_enable=\`nvram get ss_enable\`
 if [ ! -f /tmp/cron_ss.lock ] && [ "\$ss_enable" = "1" ] ; then
-eval \$(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "\$1;}')
-eval \$(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "\$1;}')
+eval \$(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "\$1";";}')
+eval \$(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "\$1";";}')
 eval "$scriptfilepath keep &"
 exit 0
 fi
@@ -1404,12 +1722,12 @@ killall -9 sh_sskeey_k.sh
 rebss=1
 ss_rdd_server=`nvram get ss_server2`
 kcptun2_enable=`nvram get kcptun2_enable`
-kcptun2_enable=${kcptun2_enable:-"0"}
+[ -z $kcptun2_enable ] && kcptun2_enable=0 && nvram set kcptun2_enable=$kcptun2_enable
 kcptun2_enable2=`nvram get kcptun2_enable2`
-kcptun2_enable2=${kcptun2_enable2:-"0"}
+[ -z $kcptun2_enable2 ] && kcptun2_enable2=0 && nvram set kcptun2_enable2=$kcptun2_enable2
 ss_run_ss_local=`nvram get ss_run_ss_local`
 ss_mode_x=`nvram get ss_mode_x`
-ss_mode_x=${ss_mode_x:-"0"}
+[ -z $ss_mode_x ] && ss_mode_x=0 && nvram set ss_mode_x=$ss_mode_x
 [ "$ss_mode_x" != "0" ] && kcptun2_enable=$kcptun2_enable2
 [ "$kcptun2_enable" = "2" ] && ss_rdd_server=""
 rm -f /tmp/cron_ss.lock
@@ -1439,38 +1757,49 @@ fi
 if [ "$rebss" -gt 6 ] ; then
 	if [ "$kcptun2_enable" = "1" ] || [ -z $ss_rdd_server ] ; then
 		logger -t "【SS】" "[$LOGTIME] 网络连接 shadowsocks 中断 ['$rebss'], 重启SS."
-		/etc/storage/ez_buttons_script.sh cleanss &
-		sleep 5
+		nvram set ss_status=0
+		eval "$scriptfilepath &"
+		sleep 10
 		exit 0
 	fi
 fi
 if [ "$ss_mode_x" = "3" ] || [ "$ss_run_ss_local" = "1" ] ; then
-	NUM=`ps - w | grep ss-local_ | grep -v grep |wc -l`
+	NUM=`ps -w | grep ss-local_ | grep -v grep |wc -l`
 	SSRNUM=1
 	[ ! -z $ss_rdd_server ] && SSRNUM=2
 	if [ "$NUM" -lt "$SSRNUM" ] || [ ! -s "`which ss-local`" ] ; then
 		logger -t "【SS】" "找不到 $SSRNUM ss-local 进程 $rebss, 重启SS."
-		/etc/storage/ez_buttons_script.sh cleanss &
-		sleep 5
+		nvram set ss_status=0
+		eval "$scriptfilepath &"
+		sleep 10
 		exit 0
 	fi
 	#跳出当前循环
 	[ "$ss_mode_x" = "3" ] && continue
 fi
 
-NUM=`ps - w | grep ss-redir_ | grep -v grep |wc -l`
+NUM=`ps -w | grep ss-redir_ | grep -v grep |wc -l`
 SSRNUM=1
 [ ! -z $ss_rdd_server ] && SSRNUM=2
 if [ "$NUM" -lt "$SSRNUM" ] ; then
 	logger -t "【SS】" "找不到 $SSRNUM shadowsocks 进程 $rebss, 重启SS."
-	/etc/storage/ez_buttons_script.sh cleanss &
-	sleep 5
+	nvram set ss_status=0
+	eval "$scriptfilepath &"
+	sleep 10
 	exit 0
 fi
+if [ "$ss_dnsproxy_x" = "0" ] ; then
+if [ -z "`pidof dnsproxy`" ] || [ ! -s "`which dnsproxy`" ] ; then
+	logger -t "【SS】" "找不到 dnsproxy 进程 $rebss，重启 dnsproxy"
+	eval "$scriptfilepath repdnsd &"
+	sleep 10
+fi
+elif [ "$ss_dnsproxy_x" = "1" ] ; then
 if [ -z "`pidof pdnsd`" ] || [ ! -s "`which pdnsd`" ] ; then
 	logger -t "【SS】" "找不到 pdnsd 进程 $rebss，重启 pdnsd"
 	eval "$scriptfilepath repdnsd &"
 	sleep 10
+fi
 fi
 #SS进程监控和双线切换
 #思路：
@@ -1494,43 +1823,68 @@ ss_pdnsd_wo_redir=`nvram get ss_pdnsd_wo_redir` #pdnsd  1、直连；0、走代�
 #检查是否存在SS备份服务器, 这里通过判断 ss_rdd_server 是否填写来检查是否存在备用服务器
 
 
+hash check_network 2>/dev/null && {
+check_network
+[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+	if [ "$check" == "404" ] ; then
+		check_network
+		[ "$?" == "0" ] && check=200 || check=404
+	fi
+}
+hash check_network 2>/dev/null || check=404
+[ "$check" == "404" ] && {
 curltest=`which curl`
 if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-	wget --continue --no-check-certificate -s -q -T 10 $ss_link_1
-	[ "$?" == "0" ] && check=200 || { check=404; restart_dhcpd && sleep 3; }
-	[ "$check" == "404" ] && wget --continue --no-check-certificate -s -q -T 10 $ss_link_1
-	[ "$check" == "404" ] && [ "$?" == "0" ] && check=200 || check=404
-else
-	check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
-	[ "$check" != "200" ] && restart_dhcpd && sleep 3
-	[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
-fi
-if [ "$check" == "200" ] ; then
-	echo "[$LOGTIME] Internet have no problem."
-else
-	logger -t "【SS】" "[$LOGTIME] Internet 问题, 请检查您的服务供应商."
-	rebss=`expr $rebss + 1`
-	restart_dhcpd
-fi
-
-
-curltest=`which curl`
-if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-	wget --continue --no-check-certificate -s -q -T 10 $ss_link_2
-	[ "$?" == "0" ] && check=200 || { check=404; restart_dhcpd && sleep 3; }
-	[ "$check" == "404" ] && wget --continue --no-check-certificate -s -q -T 10 $ss_link_2
-	[ "$check" == "404" ] && [ "$?" == "0" ] && check=200 || check=404
+	wget --continue --no-check-certificate -q -T 10 $ss_link_2
+	[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+	if [ "$check" == "404" ] ; then
+		wget --continue --no-check-certificate -q -T 10 "$ss_link_2" -O /dev/null
+		[ "$?" == "0" ] && check=200 || check=404
+	fi
 else
 	check=`curl -k -s -w "%{http_code}" "$ss_link_2" -o /dev/null`
-	[ "$check" != "200" ] && restart_dhcpd && sleep 3
+	[ "$check" != "200" ] && sleep 3
 	[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "$ss_link_2" -o /dev/null`
 fi
+}
 if [ "$check" == "200" ] ; then
 	echo "[$LOGTIME] SS $CURRENT have no problem."
 	rebss="1"
 	nvram set ss_internet="1"
 	#跳出当前循环
 	continue
+fi
+
+hash check_network 2>/dev/null && {
+check_network 3
+[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+	if [ "$check" == "404" ] ; then
+		check_network 3
+		[ "$?" == "0" ] && check=200 || check=404
+	fi
+}
+hash check_network 2>/dev/null || check=404
+[ "$check" == "404" ] && {
+curltest=`which curl`
+if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+	wget --continue --no-check-certificate -q -T 10 "$ss_link_1" -O /dev/null
+	[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+	if [ "$check" == "404" ] ; then
+		wget --continue --no-check-certificate -q -T 10 "$ss_link_1" -O /dev/null
+		[ "$?" == "0" ] && check=200 || check=404
+	fi
+else
+	check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
+	[ "$check" != "200" ] && sleep 3
+	[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
+fi
+}
+if [ "$check" == "200" ] ; then
+	echo "[$LOGTIME] Internet have no problem."
+else
+	logger -t "【SS】" "[$LOGTIME] Internet 问题, 请检查您的服务供应商."
+	rebss=`expr $rebss + 1`
+	restart_dhcpd
 fi
 
 #404
@@ -1548,17 +1902,30 @@ if [ -n "`pidof ss-redir`" ] && [ "$ss_enable" = "1" ] && [ "$ss_mode_x" != "3" 
 		sleep 5
 	fi
 fi
+hash check_network 2>/dev/null && {
+check_network
+[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+	if [ "$check" == "404" ] ; then
+		check_network
+		[ "$?" == "0" ] && check=200 || check=404
+	fi
+}
+hash check_network 2>/dev/null || check=404
+[ "$check" == "404" ] && {
 curltest=`which curl`
 if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-	wget --continue --no-check-certificate -s -q -T 10 $ss_link_2
-	[ "$?" == "0" ] && check=200 || { check=404; restart_dhcpd && sleep 3; }
-	[ "$check" == "404" ] && wget --continue --no-check-certificate -s -q -T 10 $ss_link_2
-	[ "$check" == "404" ] && [ "$?" == "0" ] && check=200 || check=404
+	wget --continue --no-check-certificate -q -T 10 $ss_link_2
+	[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+	if [ "$check" == "404" ] ; then
+		wget --continue --no-check-certificate -q -T 10 "$ss_link_2" -O /dev/null
+		[ "$?" == "0" ] && check=200 || check=404
+	fi
 else
 	check=`curl -k -s -w "%{http_code}" "$ss_link_2" -o /dev/null`
-	[ "$check" != "200" ] && restart_dhcpd && sleep 3
+	[ "$check" != "200" ] && sleep 3
 	[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "$ss_link_2" -o /dev/null`
 fi
+}
 if [ "$check" == "200" ] ; then
 	echo "[$LOGTIME] SS $CURRENT have no problem."
 	rebss="1"
@@ -1607,17 +1974,30 @@ CATIP
 fi
 restart_dhcpd
 sleep 5
+hash check_network 2>/dev/null && {
+check_network
+[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+	if [ "$check" == "404" ] ; then
+		check_network
+		[ "$?" == "0" ] && check=200 || check=404
+	fi
+}
+hash check_network 2>/dev/null || check=404
+[ "$check" == "404" ] && {
 curltest=`which curl`
 if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-	wget --continue --no-check-certificate -s -q -T 10 $ss_link_2
-	[ "$?" == "0" ] && check=200 || { check=404; restart_dhcpd && sleep 3; }
-	[ "$check" == "404" ] && wget --continue --no-check-certificate -s -q -T 10 $ss_link_2
-	[ "$check" == "404" ] && [ "$?" == "0" ] && check=200 || check=404
+	wget --continue --no-check-certificate -q -T 10 $ss_link_2
+	[ "$?" == "0" ] && check=200 || { check=404; sleep 3; }
+	if [ "$check" == "404" ] ; then
+		wget --continue --no-check-certificate -q -T 10 "$ss_link_2" -O /dev/null
+		[ "$?" == "0" ] && check=200 || check=404
+	fi
 else
 	check=`curl -k -s -w "%{http_code}" "$ss_link_2" -o /dev/null`
-	[ "$check" != "200" ] && restart_dhcpd && sleep 3
+	[ "$check" != "200" ] && sleep 3
 	[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "$ss_link_2" -o /dev/null`
 fi
+}
 if [ "$check" == "200" ] ; then
 	logger -t "【SS】" "[$LOGTIME] SS 服务器 `nvram get ss_working_port` 连接."
 	rebss="1"
@@ -1638,9 +2018,9 @@ done
 }
 
 ss_cron_job(){
-	ss_update=${ss_update:-"0"}
-	ss_update_hour=${ss_update_hour:-"23"}
-	ss_update_min=${ss_update_min:-"59"}
+	[ -z $ss_update ] && ss_update=0 && nvram set ss_update=$ss_update
+	[ -z $ss_update_hour ] && ss_update_hour=23 && nvram set ss_update_hour=$ss_update_hour
+	[ -z $ss_update_min ] && ss_update_min=59 && nvram set ss_update_min=$ss_update_min
 	if [ "0" == "$ss_update" ]; then
 	[ $ss_update_hour -gt 23 ] && ss_update_hour=23 && nvram set ss_update_hour=$ss_update_hour
 	[ $ss_update_hour -lt 0 ] && ss_update_hour=0 && nvram set ss_update_hour=$ss_update_hour
@@ -1663,8 +2043,8 @@ ss_cron_job(){
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -s "/opt/etc/init.d/rc.func" ] ; then
-	ln -sf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
 fi
 
 }
@@ -1681,7 +2061,7 @@ start)
 	check_setting
 	;;
 keep)
-	check_setting
+	#check_setting
 	SS_keep
 	;;
 rules)
@@ -1710,16 +2090,16 @@ update)
 	# [ "$ss_mode_x" != "1" ] && update_chnroutes
 	# [ "$ss_mode_x" != "2" ] && [ "$ss_pdnsd_all" != "1" ] && update_gfwlist
 	nvram set ss_updatess2=1
-	update_chnroutes
 	update_gfwlist
+	update_chnroutes
 	[ -s /tmp/sh_sskeey_k.sh ] && /tmp/sh_sskeey_k.sh &
 	;;
 updatess)
 	logger -t "【SS】" "手动更新 SS 规则文件 5 秒后进入处理状态, 请稍候"
 	sleep 5
 	nvram set ss_updatess2=1
-	update_chnroutes
 	update_gfwlist
+	update_chnroutes
 	;;
 stop)
 	stop_SS
@@ -1729,6 +2109,13 @@ repdnsd)
 	;;
 help)
 	echo "Usage: $0 {start|rules|flush|update|stop}"
+	;;
+update_optss)
+	rm -f /opt/bin/ss-redir /opt/bin/ssr-redir /opt/bin/ss-local /opt/bin/ssr-local /opt/bin/obfs-local
+	rm -f /opt/bin/ss0-redir /opt/bin/ssr0-redir /opt/bin/ss0-local /opt/bin/ssr0-local
+	ss_restart o
+	clean_SS
+	exit 0
 	;;
 *)
 	check_setting

@@ -1,20 +1,22 @@
 #!/bin/sh
 #copyright by hiboy
 source /etc/storage/script/init.sh
-nvramshow=`nvram showall | grep dnspod | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+dnspod_enable=`nvram get dnspod_enable`
+[ -z $dnspod_enable ] && dnspod_enable=0 && nvram set dnspod_enable=0
+if [ "$dnspod_enable" != "0" ] ; then
+nvramshow=`nvram showall | grep '=' | grep dnspod | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
 hostIP=""
 myIP=""
-dnspod_interval=${dnspod_interval:-"600"}
-
-[ -z $dnspod_enable ] && dnspod_enable=0 && nvram set dnspod_enable=0
+[ -z $dnspod_interval ] && dnspod_interval=600 && nvram set dnspod_interval=$dnspod_interval
+fi
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep dnspod)" ]  && [ ! -s /tmp/script/_dnspod ]; then
 	mkdir -p /tmp/script
-	ln -sf $scriptfilepath /tmp/script/_dnspod
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_dnspod
 	chmod 777 /tmp/script/_dnspod
 fi
 
-dnspod_check () {
+dnspod_get_status () {
 
 A_restart=`nvram get dnspod_status`
 B_restart="$dnspod_enable$dnspod_username$dnspod_password$dnspod_Token$dnspod_domian$dnspod_host$dnspod_domian2$dnspod_host2$dnspod_interval$(cat /etc/storage/ddns_script.sh | grep -v '^#' | grep -v "^$")"
@@ -25,18 +27,22 @@ if [ "$A_restart" != "$B_restart" ] ; then
 else
 	needed_restart=0
 fi
+}
+
+dnspod_check () {
+
+dnspod_get_status
 if [ "$dnspod_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
-	[ ! -z "$(ps - w | grep "$scriptname keep" | grep -v grep )" ] && logger -t "【DNSPod动态域名】" "停止 dnspod" && dnspod_close
-	{ eval $(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1;}'); exit 0; }
+	[ ! -z "$(ps -w | grep "$scriptname keep" | grep -v grep )" ] && logger -t "【DNSPod动态域名】" "停止 dnspod" && dnspod_close
+	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
 fi
 if [ "$dnspod_enable" = "1" ] ; then
-[ $dnspod_username ] && [ $dnspod_password ] && [ $dnspod_domian ] \
-	&& [ $dnspod_host ] || [ $dnspod_Token ]  && [ $dnspod_domian ] && [ $dnspod_host ] || { logger -t "【DNSPod动态域名】" "用户名密码或者 Token 等设置未填写, 10 秒后自动尝试重新启动" && sleep 10 nvram set dnspod_status=00; eval "$scriptfilepath &"; exit 0; }
+[ "x${dnspod_Token}" = "x" ] && [ "x${dnspod_username}" = "x" ] && [ "x${dnspod_password}" = "x" ] && { logger -t "【DNSPod动态域名】" "用户名密码或者 Token 等设置未填写, 10 秒后自动尝试重新启动" && sleep 10; nvram set dnspod_status=00; eval "$scriptfilepath &"; exit 0; }
 	if [ "$needed_restart" = "1" ] ; then
 		dnspod_close
 		eval "$scriptfilepath keep &"
 	else
-		[ -z "$(ps - w | grep "$scriptname keep" | grep -v grep )" ] && nvram set dnspod_status=00 && { eval "$scriptfilepath start &"; exit 0; }
+		[ -z "$(ps -w | grep "$scriptname keep" | grep -v grep )" ] && nvram set dnspod_status=00 && { eval "$scriptfilepath start &"; exit 0; }
 	fi
 fi
 }
@@ -47,7 +53,7 @@ logger -t "【DNSPod动态域名】" "守护进程启动"
 while true; do
 sleep 41
 sleep $dnspod_interval
-nvramshow=`nvram showall | grep dnspod | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+nvramshow=`nvram showall | grep '=' | grep dnspod | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
 [ "$dnspod_enable" = "0" ] && dnspod_close && exit 0;
 if [ "$dnspod_enable" = "1" ] ; then
 	dnspod_start
@@ -56,7 +62,9 @@ done
 }
 
 dnspod_close () {
-eval $(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1;}')
+eval $(ps -w | grep "_dnspod keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "_dnspod.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
 }
 
 dnspod_start () {
@@ -74,15 +82,17 @@ cat > "/etc/storage/ddns_script.sh" <<-\EEE
 arIpAddress () {
 curltest=`which curl`
 if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-wget --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip"
-#wget --no-check-certificate --quiet --output-document=- "1212.ip138.com/ic.asp" | grep -E -o '([0-9]+\.){3}[0-9]+'
-#wget --no-check-certificate --quiet --output-document=- "ip.6655.com/ip.aspx"
-#wget --no-check-certificate --quiet --output-document=- "ip.3322.net"
+    wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "1212.ip138.com/ic.asp" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "ip.6655.com/ip.aspx" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+'
 else
-curl -k -s "http://members.3322.org/dyndns/getip"
-#curl -k -s 1212.ip138.com/ic.asp | grep -E -o '([0-9]+\.){3}[0-9]+'
-#curl -k -s ip.6655.com/ip.aspx
-#curl -k -s ip.3322.net
+    curl -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s 1212.ip138.com/ic.asp | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s ip.6655.com/ip.aspx | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+'
 fi
 }
 arIpAddress=$(arIpAddress)
@@ -111,7 +121,7 @@ arDdnsInfo() {
 		;;
 	*)
 		echo "Get Record Info Failed!"
-		logger -t "【DNSPod动态域名】" "获取记录信息失败！"
+		#logger -t "【DNSPod动态域名】" "获取记录信息失败！"
 		return 1
 		;;
 	esac
@@ -122,11 +132,15 @@ arDdnsInfo() {
 arNslookup() {
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1
-		return $?
+		Address=`wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g | sed -n '1p'
+		fi
 	else
-		curl -k http://119.29.29.29/d?dn=$1
-		return $?
+		Address=`curl -k http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g | sed -n '1p'
+		fi
 	fi
 }
 
@@ -207,6 +221,18 @@ arDdnsCheck() {
 	local lastIP
 	source /etc/storage/ddns_script.sh
 	hostIP=$arIpAddress
+	if [ "$hostIP"x ="x"  ] ; then
+		curltest=`which curl`
+		if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+			hostIP=`wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
+		else
+			hostIP=`curl -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
+		fi
+		if [ "$hostIP"x ="x"  ] ; then
+			logger -t "【DNSPod动态域名】" "错误！获取目前 IP 失败，请在脚本更换其他获取地址"
+			return 1
+		fi
+	fi
 	echo "Updating Domain: ${2}.${1}"
 	echo "hostIP: ${hostIP}"
 	#lastIP=$(arNslookup "${2}.${1}")

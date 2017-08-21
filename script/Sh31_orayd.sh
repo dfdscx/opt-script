@@ -1,7 +1,7 @@
 #!/bin/sh
 #copyright by hiboy
 source /etc/storage/script/init.sh
-#nvramshow=`nvram showall | grep phddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep phddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
 phddns=`nvram get phddns`
 
 online=""
@@ -14,14 +14,50 @@ szUID=""
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep orayd)" ]  && [ ! -s /tmp/script/_orayd ]; then
 	mkdir -p /tmp/script
-	ln -sf $scriptfilepath /tmp/script/_orayd
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_orayd
 	chmod 777 /tmp/script/_orayd
 fi
+
+phddns_restart () {
+
+relock="/var/lock/phddns_restart.lock"
+if [ "$1" = "o" ] ; then
+	nvram set phddns_renum="0"
+	[ -f $relock ] && rm -f $relock
+	return 0
+fi
+if [ "$1" = "x" ] ; then
+	if [ -f $relock ] ; then
+		logger -t "【phddns】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		exit 0
+	fi
+	phddns_renum=${phddns_renum:-"0"}
+	phddns_renum=`expr $phddns_renum + 1`
+	nvram set phddns_renum="$phddns_renum"
+	if [ "$phddns_renum" -gt "2" ] ; then
+		I=19
+		echo $I > $relock
+		logger -t "【phddns】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		while [ $I -gt 0 ]; do
+			I=$(($I - 1))
+			echo $I > $relock
+			sleep 60
+			[ "$(nvram get phddns_renum)" = "0" ] && exit 0
+			[ $I -lt 0 ] && break
+		done
+		nvram set phddns_renum="0"
+	fi
+	[ -f $relock ] && rm -f $relock
+fi
+nvram set phddns_status=0
+eval "$scriptfilepath &"
+exit 0
+}
 
 phddns_check () {
 if [ "$phddns" != "1" ] ; then
 	[ ! -z "`pidof oraysl`" ] && logger -t "【花生壳内网版】" "停止 oraysl" && phddns_close
-	{ eval $(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1;}'); exit 0; }
+	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
 fi
 if [ "$phddns" = "1" ] ; then
 	if [ -z "`pidof oraysl`" ] || [ ! -s "`which oraysl`" ] ; then
@@ -86,11 +122,11 @@ nvram set phddns_st="$STATUS"
 nvram set phddns_szUID="$szUID"
 while true; do
 	onlinetest
-	NUM=`ps - w | grep "oraynewph -s 0.0.0.0" | grep -v grep |wc -l`
-	NUM2=`ps - w | grep "oraysl -a 127.0.0.1" | grep -v grep |wc -l`
+	NUM=`ps -w | grep "oraynewph -s 0.0.0.0" | grep -v grep |wc -l`
+	NUM2=`ps -w | grep "oraysl -a 127.0.0.1" | grep -v grep |wc -l`
 	if [ "$NUM" -lt "1" ] || [ "$NUM2" -lt "1" ] || [ $online -le 0 ] || [ ! -s "/usr/bin/oraysl" ] ; then
 		logger -t "【花生壳内网版】" "网络状态:【$orayslstatus 】，重新启动($NUM , $NUM)"
-		{ eval "$scriptfilepath &" ; exit 0; }
+		phddns_restart
 	fi
 	
 sleep 231
@@ -100,7 +136,9 @@ done
 phddns_close () {
 killall oraynewph oraysl
 killall -9 oraynewph oraysl
-eval $(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1;}')
+eval $(ps -w | grep "_orayd keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "_orayd.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
 }
 
 phddns_start () {
@@ -130,7 +168,7 @@ fi
 if [ ! -s "$SVC_PATH" ] || [ ! -s "$SVC_PATH2" ] ; then
 	[ ! -s "$SVC_PATH" ] && logger -t "【花生壳内网版】" "找不到 $SVC_PATH ，需要手动安装 $SVC_PATH"
 	[ ! -s "$SVC_PATH2" ] && logger -t "【花生壳内网版】" "找不到 $SVC_PATH2 ，需要手动安装 $SVC_PATH2"
-	logger -t "【花生壳内网版】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && { eval "$scriptfilepath &"; exit 0; }
+	logger -t "【花生壳内网版】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && phddns_restart x
 fi
 logger -t "【花生壳内网版】" "运行 oraysl"
 ln -sf "/etc/storage/PhMain.ini" "/etc/PhMain.ini"
@@ -138,8 +176,8 @@ ln -sf "/etc/storage/init.status" "/etc/init.status"
 oraynewph -s 0.0.0.0 >/dev/null 2>/dev/null &
 oraysl -a 127.0.0.1 -p 16062 -s phsle01.oray.net:80 -d >/dev/null 2>/dev/null &
 sleep 2
-[ ! -z "`pidof oraysl`" ] && logger -t "【花生壳内网版】" "启动成功"
-[ -z "`pidof oraysl`" ] && logger -t "【花生壳内网版】" "启动失败, 注意检查oraysl、oraynewph是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && { rm -rf /opt/bin/oraysl /opt/bin/oraynewph ; eval "$scriptfilepath &"; exit 0; }
+[ ! -z "`pidof oraysl`" ] && logger -t "【花生壳内网版】" "启动成功" && phddns_restart o
+[ -z "`pidof oraysl`" ] && logger -t "【花生壳内网版】" "启动失败, 注意检查oraysl、oraynewph是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && { rm -rf /opt/bin/oraysl /opt/bin/oraynewph ; phddns_restart x ; }
 
 eval "$scriptfilepath keep &"
 }
@@ -147,8 +185,8 @@ eval "$scriptfilepath keep &"
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -s "/opt/etc/init.d/rc.func" ] ; then
-	ln -sf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
 fi
 
 }
@@ -165,7 +203,7 @@ stop)
 	phddns_close
 	;;
 keep)
-	phddns_check
+	#phddns_check
 	phddns_keep
 	;;
 *)

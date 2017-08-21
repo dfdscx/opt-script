@@ -1,10 +1,15 @@
 #!/bin/sh
 #copyright by hiboy
 source /etc/storage/script/init.sh
-nvramshow=`nvram showall | grep ss | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-nvramshow=`nvram showall | grep adbyby | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-
+TAG="AD_BYBY"		  # iptables tag
+adbyby_enable=`nvram get adbyby_enable`
 [ -z $adbyby_enable ] && adbyby_enable=0 && nvram set adbyby_enable=0
+if [ "$adbyby_enable" != "0" ] ; then
+nvramshow=`nvram showall | grep '=' | grep ss | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+nvramshow=`nvram showall | grep '=' | grep adm | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+nvramshow=`nvram showall | grep '=' | grep koolproxy | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+nvramshow=`nvram showall | grep '=' | grep adbyby | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
 [ -z $adbyby_mode_x ] && adbyby_mode_x=0 && nvram set adbyby_mode_x=0
 
 
@@ -12,12 +17,14 @@ adbybyfile="$hiboyfile/7620i.tar.gz"
 adbybyfile2="$hiboyfile2/7620i.tar.gz"
 
 
-TAG="AD_BYBY"		  # iptables tag
 FWI="/tmp/firewall.adbyby.pdcn" # firewall include file
 AD_LAN_AC_IP=`nvram get AD_LAN_AC_IP`
-AD_LAN_AC_IP=${AD_LAN_AC_IP:-"0"}
+[ -z $AD_LAN_AC_IP ] && AD_LAN_AC_IP=0 && nvram set AD_LAN_AC_IP=$AD_LAN_AC_IP
 lan_ipaddr=`nvram get lan_ipaddr`
-[ -z "$ss_DNS_Redirect_IP" ] && ss_DNS_Redirect_IP=$lan_ipaddr
+[ -z "$ss_DNS_Redirect_IP" ] && ss_DNS_Redirect_IP=$lan_ipaddr && nvram set ss_DNS_Redirect_IP=$ss_DNS_Redirect_IP
+[ -z $adbyby_adblocks ] && adbyby_adblocks=0 && nvram set adbyby_adblocks=$adbyby_adblocks
+
+fi
 #检查 dnsmasq 目录参数
 confdir=`grep conf-dir /etc/storage/dnsmasq/dnsmasq.conf | sed 's/.*\=//g'`
 if [ -z "$confdir" ] ; then 
@@ -29,14 +36,105 @@ gfw_black_list="gfwlist"
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep ad_byby)" ]  && [ ! -s /tmp/script/_ad_byby ]; then
 	mkdir -p /tmp/script
-	ln -sf $scriptfilepath /tmp/script/_ad_byby
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_ad_byby
 	chmod 777 /tmp/script/_ad_byby
 fi
 
-adbyby_check () {
+adbyby_mount () {
+
+ss_opt_x=`nvram get ss_opt_x`
+upanPath=""
+[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
+[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
+[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
+[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
+echo "$upanPath"
+if [ ! -z "$upanPath" ] ; then 
+	logger -t "【Adbyby】" "已挂载储存设备, 主程序放外置设备存储"
+	initopt
+	mkdir -p $upanPath/ad/bin
+	ln -sf "$upanPath/ad/bin" /tmp/bin
+	if [ -s /etc_ro/7620i.tar.gz ] && [ ! -s "$$upanPath/ad/bin/adbyby" ] ; then
+		logger -t "【Adbyby】" "使用内置主程序"
+		untar.sh /etc_ro/7620i.tar.gz $upanPath/ad $upanPath/ad/bin/adbyby
+	fi
+	if [ ! -s "$upanPath/ad/bin/adbyby" ] ; then
+		logger -t "【Adbyby】" "开始下载 7620n.tar.gz"
+		wgetcurl.sh $upanPath/ad/7620n.tar.gz $adbybyfile $adbybyfile2
+		untar.sh $upanPath/ad/7620n.tar.gz $upanPath/ad $upanPath/ad/bin/adbyby
+	fi
+	if [ ! -s "$upanPath/ad/bin/adbyby" ] ; then
+		logger -t "【Adbyby】" "开始下载http://update.adbyby.com/download/7620n.tar.gz"
+		wgetcurl.sh $upanPath/ad/7620n.tar.gz "https://raw.githubusercontent.com/adbyby/Files/master/7620n.tar.gz" 'http://update.adbyby.com/download/7620n.tar.gz' N
+		untar.sh $upanPath/ad/7620n.tar.gz $upanPath/ad $upanPath/ad/bin/adbyby
+	fi
+else
+	logger -t "【Adbyby】" "未挂载储存设备, 主程序放路由内存存储"
+	mkdir -p /tmp/bin
+	if [ -s /etc_ro/7620i.tar.gz ] && [ ! -s "/tmp/bin/adbyby" ] ; then
+		logger -t "【Adbyby】" "使用内置主程序"
+		untar.sh /etc_ro/7620i.tar.gz /tmp /tmp/bin/adbyby
+	fi
+	if [ ! -s "/tmp/bin/adbyby" ] ; then
+		logger -t "【Adbyby】" "开始下载 7620n.tar.gz"
+		wgetcurl.sh /tmp/7620n.tar.gz $adbybyfile $adbybyfile2
+		untar.sh /tmp/7620n.tar.gz /tmp /tmp/bin/adbyby
+	fi
+	if [ ! -s "/tmp/bin/adbyby" ] ; then
+		logger -t "【Adbyby】" "开始下载http://update.adbyby.com/download/7620n.tar.gz"
+		wgetcurl.sh /tmp/7620n.tar.gz "https://raw.githubusercontent.com/adbyby/Files/master/7620n.tar.gz" 'http://update.adbyby.com/download/7620n.tar.gz' N
+		untar.sh /tmp/7620n.tar.gz /tmp /tmp/bin/adbyby
+	fi
+fi
+export PATH='/tmp/bin:/etc/storage/bin:/tmp/script:/etc/storage/script:/opt/usr/sbin:/opt/usr/bin:/opt/sbin:/opt/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
+hash adbyby 2>/dev/null || rm -rf /tmp/bin/*
+if [ ! -s "/tmp/bin/adbyby" ] ; then
+	rm -rf /tmp/bin/*
+	logger -t "【Adbyby】" "下载失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && adbyby_restart x
+fi
+}
+
+adbyby_restart () {
+
+relock="/var/lock/adbyby_restart.lock"
+if [ "$1" = "o" ] ; then
+	nvram set adbyby_renum="0"
+	[ -f $relock ] && rm -f $relock
+	return 0
+fi
+if [ "$1" = "x" ] ; then
+	rm -rf /tmp/bin/*
+	if [ -f $relock ] ; then
+		logger -t "【adbyby】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		exit 0
+	fi
+	adbyby_renum=${adbyby_renum:-"0"}
+	adbyby_renum=`expr $adbyby_renum + 1`
+	nvram set adbyby_renum="$adbyby_renum"
+	if [ "$adbyby_renum" -gt "2" ] ; then
+		I=19
+		echo $I > $relock
+		logger -t "【adbyby】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		while [ $I -gt 0 ]; do
+			I=$(($I - 1))
+			echo $I > $relock
+			sleep 60
+			[ "$(nvram get adbyby_renum)" = "0" ] && exit 0
+			[ $I -lt 0 ] && break
+		done
+		nvram set adbyby_renum="0"
+	fi
+	[ -f $relock ] && rm -f $relock
+fi
+nvram set adbyby_status=0
+eval "$scriptfilepath &"
+exit 0
+}
+
+adbyby_get_status () {
 
 A_restart=`nvram get adbyby_status`
-B_restart="$adbyby_enable$ss_link_1$adbyby_update$adbyby_update_hour$adbyby_update_min$adbyby_mode_x$adbybyfile$adbybyfile2$adbyby_adblocks$adbyby_CPUAverages$ss_sub4$adbyby_whitehost_x$whitehost$lan_ipaddr$lan_ipaddr$ss_DNS_Redirect$ss_DNS_Redirect_IP$ss_DNS_Redirect$(cat /etc/storage/ad_config_script.sh | grep -v "^$" | grep -v "^#")$(cat /etc/storage/adbyby_rules_script.sh | grep -v "^$" | grep -v "^!")"
+B_restart="$adbyby_enable$ss_link_1$adbyby_update$adbyby_update_hour$adbyby_update_min$adbyby_mode_x$adbybyfile$adbybyfile2$adbyby_adblocks$adbyby_CPUAverages$ss_sub4$adbyby_whitehost_x$whitehost$lan_ipaddr$ss_DNS_Redirect$ss_DNS_Redirect_IP$(cat /etc/storage/ad_config_script.sh | grep -v "^$" | grep -v "^#")$(cat /etc/storage/adbyby_rules_script.sh | grep -v "^$" | grep -v "^!")"
 B_restart=`echo -n "$B_restart" | md5sum | sed s/[[:space:]]//g | sed s/-//g`
 if [ "$A_restart" != "$B_restart" ] ; then
 	nvram set adbyby_status=$B_restart
@@ -44,17 +142,22 @@ if [ "$A_restart" != "$B_restart" ] ; then
 else
 	needed_restart=0
 fi
+}
+
+adbyby_check () {
+
+adbyby_get_status
 if [ "$adbyby_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "`pidof adbyby`" ] && logger -t "【Adbyby】" "停止 adbyby" && adbyby_close
-	{ eval $(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1;}'); exit 0; }
+	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
 fi
 if [ "$adbyby_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
 		adbyby_close
 		adbyby_start
 	else
-		[ -z "`pidof adbyby`" ] || [ ! -s "/tmp/bin/adbyby" ] && nvram set adbyby_status=00 && { eval "$scriptfilepath start &"; exit 0; }
-		PIDS=$(ps - w | grep "/tmp/bin/adbyby" | grep -v "grep" | grep -v "adbybyupdate.sh" | grep -v "adbybyfirst.sh" | wc -l)
+		[ -z "`pidof adbyby`" ] || [ ! -s "/tmp/bin/adbyby" ] && adbyby_restart
+		PIDS=$(ps -w | grep "/tmp/bin/adbyby" | grep -v "grep" | grep -v "adbybyupdate.sh" | grep -v "adbybyfirst.sh" | wc -l)
 		if [ "$PIDS" != 0 ] ; then
 			port=$(iptables -t nat -L | grep 'ports 8118' | wc -l)
 			if [ "$port" = 0 ] ; then
@@ -68,13 +171,21 @@ fi
 
 adbyby_keep () {
 
+adbybylazytime="`sed -n '1,10p' /tmp/bin/data/lazy.txt | grep "$(sed -n '1,10p' /tmp/bin/data/lazy.txt | grep -Eo '[0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+|201?.{1}' | sed -n '1p')" | sed 's/[x!]//g' | sed -r 's/-{2,}//g' | sed -r 's/\ {2}//g' | sed -r 's/\ {2}//g' | sed -r 's/[^0-9a-z: \-]//g' | sed -n '1p'`"
+adbybyvideotime="`sed -n '1,10p' /tmp/bin/data/video.txt | grep "$(sed -n '1,10p' /tmp/bin/data/video.txt | grep -Eo '[0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+|201?.{1}' | sed -n '1p')" | sed 's/[x!]//g' | sed -r 's/-{2,}//g' | sed -r 's/\ {2}//g' | sed -r 's/\ {2}//g' | sed -r 's/[^0-9a-z: \-]//g' | sed -n '1p'`"
+adbybylazy_nu="`cat /tmp/bin/data/lazy.txt | grep -v ! | wc -l`"
+adbybyvideo_nu="`cat /tmp/bin/data/video.txt | grep -v ! | wc -l`"
+nvram set adbybylazy="$ipsetstxt lazy规则更新时间 $adbybylazytime / 【 $adbybylazy_nu 】条"
+nvram set adbybyvideo="$ipsetstxt video规则更新时间 $adbybyvideotime / 【 $adbybyvideo_nu 】条"
+nvram set adbybyuser3="第三方规则行数:  `sed -n '$=' /tmp/bin/data/user3adblocks.txt | sed s/[[:space:]]//g ` 行"
+nvram set adbybyuser="自定义规则行数:  `sed -n '$=' /tmp/bin/data/user_rules.txt | sed s/[[:space:]]//g ` 行"
 cat > "/tmp/sh_ad_byby_keey_k.sh" <<-ADMK
 #!/bin/sh
 sleep 919
 adbyby_enable=\`nvram get adbyby_enable\`
 if [ ! -f /tmp/cron_adb.lock ] && [ "\$adbyby_enable" = "1" ] ; then
-eval \$(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "\$1;}')
-eval \$(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "\$1;}')
+eval \$(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "\$1";";}')
+eval \$(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "\$1";";}')
 eval "$scriptfilepath keep &"
 exit 0
 fi
@@ -86,11 +197,13 @@ killall -9 sh_ad_byby_keey_k.sh
 
 rm -f /tmp/cron_adb.lock
 reb="1"
-runx="1"
-ss_link_1=${ss_link_1:-"www.163.com"}
-ss_link_2=${ss_link_2:-"www.google.com.hk"}
+[ -z $ss_link_1 ] && ss_link_1="email.163.com" && nvram set ss_link_1="email.163.com"
+[ -z $ss_link_2 ] && ss_link_2="www.google.com.hk" && nvram set ss_link_2="www.google.com.hk"
+[ $ss_link_1 == "www.163.com" ] && ss_link_1="email.163.com" && nvram set ss_link_1="email.163.com"
 while true; do
-[ ! -s "/tmp/bin/adbyby" ] && nvram set adbyby_status=00 && { logger -t "【Adbyby】" "重新启动"; eval "$scriptfilepath start &"; exit 0; }
+adbyby_enable=`nvram get adbyby_enable`
+[ "$adbyby_enable" != "1" ] && exit
+[ ! -s "/tmp/bin/adbyby" ] && logger -t "【Adbyby】" "重新启动" && adbyby_restart
 if [ ! -f /tmp/cron_adb.lock ] ; then
 	if [ "$reb" -gt 5 ] && [ "$(cat /tmp/reb.lock)x" == "1x" ] ; then
 		LOGTIME=$(date "+%Y-%m-%d %H:%M:%S")
@@ -98,20 +211,33 @@ if [ ! -f /tmp/cron_adb.lock ] ; then
 		sleep 5
 		reboot
 	fi
+	hash check_network 2>/dev/null && {
+	check_network 3
+	[ "$?" == "0" ] && check=200 || { check=404;  sleep 3; }
+		if [ "$check" == "404" ] ; then
+			check_network 3
+			[ "$?" == "0" ] && check=200 || check=404
+		fi
+	}
+	hash check_network 2>/dev/null || check=404
+	[ "$check" == "404" ] && {
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		wget --continue --no-check-certificate -s -q -T 10 $ss_link_1
-		[ "$?" == "0" ] && check=200 || { check=404; restart_dhcpd && sleep 3; }
-		[ "$check" == "404" ] && wget --continue --no-check-certificate -s -q -T 10 $ss_link_1
-		[ "$check" == "404" ] && [ "$?" == "0" ] && check=200 || check=404
+		wget --continue --no-check-certificate -q -T 10 "$ss_link_1" -O /dev/null
+		[ "$?" == "0" ] && check=200 || { check=404;  sleep 3; }
+		if [ "$check" == "404" ] ; then
+			wget --continue --no-check-certificate -q -T 10 "$ss_link_1" -O /dev/null
+			[ "$?" == "0" ] && check=200 || check=404
+		fi
 	else
 		check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
-		[ "$check" != "200" ] && restart_dhcpd && sleep 3
+		[ "$check" != "200" ] &&  sleep 3
 		[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "$ss_link_1" -o /dev/null`
 	fi
+	}
 	if [ "$check" == "200" ] && [ ! -f /tmp/cron_adb.lock ] ; then
 		reb=1
-		PIDS=$(ps - w | grep "/tmp/bin/adbyby" | grep -v "grep" | grep -v "adbybyupdate.sh" | grep -v "adbybyfirst.sh" | wc -l)
+		PIDS=$(ps -w | grep "/tmp/bin/adbyby" | grep -v "grep" | grep -v "adbybyupdate.sh" | grep -v "adbybyfirst.sh" | wc -l)
 		if [ "$PIDS" = 0 ] ; then 
 			logger -t "【Adbyby】" "网络连接正常"
 			logger -t "【Adbyby】" "找不到进程, 重启 adbyby"
@@ -142,7 +268,11 @@ if [ ! -f /tmp/cron_adb.lock ] ; then
 				logger -t "【Adbyby】" "找不到8118转发规则, 重新添加"
 				adbyby_add_rules
 			fi
-		runx=`expr $runx + 1`
+		port=$(iptables -t nat -L | grep 'AD_BYBY_to' | wc -l)
+			if [ "$port" = 0 ] && [ ! -f /tmp/cron_adb.lock ] ; then
+				logger -t "【Adbyby】" "找不到AD_BYBY_to转发规则, 重新添加"
+				adbyby_add_rules
+			fi
 	else
 		# logger -t "【Adbyby】" "网络连接中断 $reb, 关闭 adbyby"
 		port=$(iptables -t nat -L | grep 'ports 8118' | wc -l)
@@ -153,7 +283,7 @@ if [ ! -f /tmp/cron_adb.lock ] ; then
 			port=$(iptables -t nat -L | grep 'ports 8118' | wc -l)
 			sleep 5
 		done
-		PIDS=$(ps - w | grep "/tmp/bin/adbyby" | grep -v "grep" | wc -l)
+		PIDS=$(ps -w | grep "/tmp/bin/adbyby" | grep -v "grep" | wc -l)
 		if [ "$PIDS" != 0 ] ; then 
 			killall -15 adbyby
 			killall -9 adbyby
@@ -170,20 +300,20 @@ done
 
 adbyby_keepcpu () {
 if [ "$adbyby_CPUAverages" = "1" ] && [ ! -f /tmp/cron_adb.lock ] ; then
-	CPULoad=`uptime |sed -e 's/\ *//g' -e 's/.*://g' -e 's/,.*//g' -e 's/\..*//g'`
-	if [ $((CPULoad)) -ge "2" ] ; then
+	processor=`cat /proc/cpuinfo| grep "processor"| wc -l`
+	processor=`expr $processor \* 2`
+	CPULoad=`uptime |sed -e 's/\ *//g' -e 's/.*://g' | awk -F ',' '{print $2;}' | sed -e 's/\..*//g'`
+	if [ $((CPULoad)) -ge "$processor" ] ; then
 		logger -t "【Adbyby】" "CPU 负载拥堵, 关闭 adbyby"
 		adbyby_flush_rules
 		/etc/storage/ez_buttons_script.sh 3 & #更新按钮状态
 		killall -15 adbyby
 		killall -9 adbyby
 		touch /tmp/cron_adb.lock
-		processor=`cat /proc/cpuinfo| grep "processor"| wc -l`
-		processor=`expr $processor \* 2`
 		while [[ "$CPULoad" -gt "$processor" ]] 
 		do
 			sleep 62
-			CPULoad=`uptime |sed -e 's/\ *//g' -e 's/.*://g' -e 's/,.*//g' -e 's/\..*//g'`
+			CPULoad=`uptime |sed -e 's/\ *//g' -e 's/.*://g' | awk -F ',' '{print $2;}' | sed -e 's/\..*//g'`
 		done
 		logger -t "【Adbyby】" "CPU 负载正常"
 		rm -f /tmp/cron_adb.lock
@@ -192,13 +322,26 @@ fi
 }
 
 adbyby_close () {
+
+nvram set adbybylazy="【adbyby未启动】lazy更新："
+nvram set adbybyvideo="【adbyby未启动】video更新："
+nvram set adbybyuser3="第三方规则行数：行"
+nvram set adbybyuser="自定义规则行数：行"
 cru.sh d adbyby_update &
+cru.sh d adm_update &
+cru.sh d koolproxy_update &
 port=$(iptables -t nat -L | grep 'ports 8118' | wc -l)
 [ "$port" != 0 ] && adbyby_flush_rules
 killall -15 adbyby sh_ad_byby_keey_k.sh
 killall -9 adbyby sh_ad_byby_keey_k.sh
+[ "$adm_enable" != "1" ] && killall -15 adm sh_ad_m_keey_k.sh
+[ "$adm_enable" != "1" ] && killall -9 adm sh_ad_m_keey_k.sh
+[ "$koolproxy_enable" != "1" ] && killall -15 koolproxy sh_ad_kp_keey_k.sh
+[ "$koolproxy_enable" != "1" ] && killall -9 koolproxy sh_ad_kp_keey_k.sh
 rm -f /tmp/7620n.tar.gz /tmp/cron_adb.lock /tmp/adbyby_host_backup.conf /tmp/sh_ad_byby_keey_k.sh
-eval $(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1;}')
+eval $(ps -w | grep "_ad_byby keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "_ad_byby.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
 }
 
 adbyby_start () {
@@ -214,19 +357,7 @@ if [ -z "`pidof adbyby`" ] && [ "$adbyby_enable" = "1" ] && [ ! -f /tmp/cron_adb
 	do
 		modprobe $module
 	done 
-	if [ ! -s "/tmp/bin/adbyby" ] ; then
-		logger -t "【Adbyby】" "开始下载 7620n.tar.gz"
-		wgetcurl.sh /tmp/7620n.tar.gz $adbybyfile $adbybyfile2
-		untar.sh /tmp/7620n.tar.gz /tmp /tmp/bin/adbyby
-	fi
-	if [ ! -s "/tmp/bin/adbyby" ] ; then
-		logger -t "【Adbyby】" "开始下载http://update.adbyby.com/download/7620n.tar.gz"
-		wgetcurl.sh /tmp/7620n.tar.gz "https://raw.githubusercontent.com/adbyby/Files/master/7620n.tar.gz" 'http://update.adbyby.com/download/7620n.tar.gz'
-		untar.sh /tmp/7620n.tar.gz /tmp /tmp/bin/adbyby
-	fi
-	if [ ! -s "/tmp/bin/adbyby" ] ; then
-		logger -t "【Adbyby】" "下载失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && { nvram set adbyby_status=00; eval "$scriptfilepath &"; exit 0; }
-	fi
+	adbyby_mount
 	sed -e '/^$/d' -i /etc/storage/dnsmasq/hosts
 	sed -e '/.*127.0.0.1.*update.adbyby.com.*/d' -i /etc/storage/dnsmasq/hosts
 	sed -e '/.*119.147.134.192.*update.adbyby.com/d' -i /etc/storage/dnsmasq/hosts
@@ -234,39 +365,47 @@ if [ -z "`pidof adbyby`" ] && [ "$adbyby_enable" = "1" ] && [ ! -f /tmp/cron_adb
 	sed -Ei '/.*update.adbyby.com\/180.76.76.76.*/d' /etc/storage/dnsmasq/dnsmasq.servers
 	sed -e '/^$/d' -i /etc/storage/dnsmasq/dnsmasq.servers
 	restart_dhcpd
+	logger -t "【Adbyby】" "测试下载规则"
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		wget --continue --no-check-certificate -s -q -T 10 http://update.adbyby.com/rule3/video.jpg
+		wget --continue --no-check-certificate -q -T 10 http://update.adbyby.com/rule3/video.jpg
 		[ "$?" == "0" ] && check=200 || check=404
+		[ "$check" != "200" ] && check=`curl -k -s -w "%{http_code}" "http://update.adbyby.com/rule3/video.jpg" -o /dev/null`
 	else
 		check=`curl -k -s -w "%{http_code}" "http://update.adbyby.com/rule3/video.jpg" -o /dev/null`
+		[ "$check" != "200" ] && {
+		wget --continue --no-check-certificate -q -T 10 http://update.adbyby.com/rule3/video.jpg
+		[ "$?" == "0" ] && check=200 || check=404
+		}
 	fi
 	if [ "$check" == "200" ] ; then
+		logger -t "【Adbyby】" "测试下载规则成功"
 		echo "[$LOGTIME] update.adbyby.com have no problem."
 		rm -rf /tmp/bin/data/video_B.txt /tmp/bin/data/lazy_B.txt
 	else
 		mkdir -p /tmp/bin/data
-		logger -t "【Adbyby】" "下载规则失败, 强制 手动同步更新规则"
+		logger -t "【Adbyby】" "测试下载规则失败, 强制 手动同步更新规则"
 		xwhyc_rules="$hiboyfile/video.txt"
 		xwhyc_rules3="$hiboyfile2/video.txt"
 		xwhyc_rules2="http://update.adbyby.com/rule3/video.jpg"
 		logger -t "【Adbyby】" "下载规则:$xwhyc_rules"
-		wgetcurl.sh /tmp/bin/data/video.txt $xwhyc_rules $xwhyc_rules2
-		[ -f /tmp/bin/data/video.txt ] && wgetcurl.sh /tmp/bin/data/video.txt $xwhyc_rules3 $xwhyc_rules2
-		mv -f /tmp/bin/data/video.txt /tmp/bin/data/video_B.txt
+		wgetcurl.sh /tmp/bin/data/video.txt $xwhyc_rules $xwhyc_rules2 N 5
+		[ ! -s /tmp/bin/data/video.txt ] && wgetcurl.sh /tmp/bin/data/video.txt $xwhyc_rules3 $xwhyc_rules2 N 5
+		[ -s /tmp/bin/data/video.txt ] && mv -f /tmp/bin/data/video.txt /tmp/bin/data/video_B.txt
 		xwhyc_rules="$hiboyfile/lazy.txt"
 		xwhyc_rules3="$hiboyfile2/lazy.txt"
 		xwhyc_rules2="http://update.adbyby.com/rule3/lazy.jpg"
 		logger -t "【Adbyby】" "下载规则:$xwhyc_rules"
-		wgetcurl.sh /tmp/bin/data/lazy.txt $xwhyc_rules $xwhyc_rules2
-		[ -f /tmp/bin/data/lazy.txt ] && wgetcurl.sh /tmp/bin/data/lazy.txt $xwhyc_rules3 $xwhyc_rules2
-		mv -f /tmp/bin/data/lazy.txt /tmp/bin/data/lazy_B.txt
+		wgetcurl.sh /tmp/bin/data/lazy.txt $xwhyc_rules $xwhyc_rules2 N 5
+		[ ! -s /tmp/bin/data/lazy.txt ] && wgetcurl.sh /tmp/bin/data/lazy.txt $xwhyc_rules3 $xwhyc_rules2 N 5
+		[ -s /tmp/bin/data/lazy.txt ] && mv -f /tmp/bin/data/lazy.txt /tmp/bin/data/lazy_B.txt
 	fi
 	chmod 777 /tmp/bin/adbyby
 	# 设置路由ip:8118
 	lan_ipaddr="0.0.0.0" #`nvram get lan_ipaddr`
 	sed -e "s|^\(listen-address.*\)=[^=]*$|\1=$lan_ipaddr:8118|" -i /tmp/bin/adhook.ini
 	# 处理第三方自定义规则 /tmp/rule_DOMAIN.txt
+	/etc/storage/ad_config_script.sh
 	adbyby_adblocks=`nvram get adbyby_adblocks`
 	rm -f /tmp/bin/data/user.bin
 	rm -f /tmp/bin/data/user.txt
@@ -279,7 +418,7 @@ if [ -z "`pidof adbyby`" ] && [ "$adbyby_enable" = "1" ] && [ ! -f /tmp/cron_adb
 		c_line=`echo $line |grep -v "#"`
 		if [ ! -z "$c_line" ] ; then
 			logger -t "【Adbyby】" "下载规则:$line"
-			wgetcurl.sh /tmp/bin/data/user2.txt $line
+			wgetcurl.sh /tmp/bin/data/user2.txt $line $line N
 			grep -v '^!' /tmp/bin/data/user2.txt | grep -E '^(@@\||\||[[:alnum:]])' | sort -u | grep -v "^$" >> /tmp/bin/data/user3adblocks.txt
 			rm -f /tmp/bin/data/user2.txt
 		fi
@@ -314,8 +453,8 @@ if [ -z "`pidof adbyby`" ] && [ "$adbyby_enable" = "1" ] && [ ! -f /tmp/cron_adb
 		logger -t "【Adbyby】" "加载手动同步更新规则"
 		grep -v '^!' /tmp/bin/data/video_B.txt | grep -v "^$" >> /tmp/bin/data/user.txt
 		grep -v '^!' /tmp/bin/data/lazy_B.txt | grep -v "^$" >> /tmp/bin/data/user.txt
-		mv -f /tmp/bin/data/lazy_B.txt /tmp/bin/data/lazy.txt
-		mv -f /tmp/bin/data/video_B.txt /tmp/bin/data/video.txt
+		[ -s /tmp/bin/data/lazy_B.txt ] && mv -f /tmp/bin/data/lazy_B.txt /tmp/bin/data/lazy.txt
+		[ -s /tmp/bin/data/video_B.txt ] && mv -f /tmp/bin/data/video_B.txt /tmp/bin/data/video.txt
 	fi
 	logger -t "【Adbyby】" "启动 adbyby 程序"
 	/tmp/bin/adbyby >/dev/null 2>&1 &
@@ -326,8 +465,8 @@ if [ -z "`pidof adbyby`" ] && [ "$adbyby_enable" = "1" ] && [ ! -f /tmp/cron_adb
 		sleep 5
 	fi
 fi
-[ ! -z "`pidof adbyby`" ] && logger -t "【Adbyby】" "启动成功"
-[ -z "`pidof adbyby`" ] && logger -t "【Adbyby】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && { nvram set adbyby_status=00; eval "$scriptfilepath &"; exit 0; }
+[ ! -z "`pidof adbyby`" ] && logger -t "【Adbyby】" "启动成功" && adbyby_restart o
+[ -z "`pidof adbyby`" ] && logger -t "【Adbyby】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && adbyby_restart x
 adbyby_add_rules
 rm -f /tmp/7620n.tar.gz /tmp/cron_adb.lock
 if [ "$adbyby_mode_x" = "1" ] ; then
@@ -336,8 +475,8 @@ else
 	ipsetstxt="【全局模式】"
 fi
 
-adbybylazytime="`sed -n '1,10p' /tmp/bin/data/lazy.txt | grep "$(sed -n '1,10p' /tmp/bin/data/lazy.txt | grep -Eo '[0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+' | sed -n '1p')" | sed 's/[x!]//g' | sed -r 's/-{2,}//g' | sed -r 's/\ {2}//g' | sed -r 's/\ {2}//g' | sed -r 's/[^0-9a-z: \-]//g'`"
-adbybyvideotime="`sed -n '1,10p' /tmp/bin/data/video.txt | grep "$(sed -n '1,10p' /tmp/bin/data/video.txt | grep -Eo '[0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+' | sed -n '1p')" | sed 's/[x!]//g' | sed -r 's/-{2,}//g' | sed -r 's/\ {2}//g' | sed -r 's/\ {2}//g' | sed -r 's/[^0-9a-z: \-]//g'`"
+adbybylazytime="$(sed -n '1,10p' /tmp/bin/data/lazy.txt | grep "$(sed -n '1,10p' /tmp/bin/data/lazy.txt | grep -Eo '[0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+|201?.{1}' | sed -n '1p')" | sed 's/[x!]//g' | sed -r 's/-{2,}//g' | sed -r 's/\ {2}//g' | sed -r 's/\ {2}//g' | sed -r 's/[^0-9a-z: \-]//g' | sed -n '1p')"
+adbybyvideotime="$(sed -n '1,10p' /tmp/bin/data/video.txt | grep "$(sed -n '1,10p' /tmp/bin/data/video.txt | grep -Eo '[0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+|201?.{1}' | sed -n '1p')" | sed 's/[x!]//g' | sed -r 's/-{2,}//g' | sed -r 's/\ {2}//g' | sed -r 's/\ {2}//g' | sed -r 's/[^0-9a-z: \-]//g' | sed -n '1p')"
 adbybylazy_nu="`cat /tmp/bin/data/lazy.txt | grep -v ! | wc -l`"
 adbybyvideo_nu="`cat /tmp/bin/data/video.txt | grep -v ! | wc -l`"
 logger -t "【Adbyby】" "$ipsetstxt lazy规则更新时间 $adbybylazytime / 【 $adbybylazy_nu 】条"
@@ -351,11 +490,12 @@ nvram set adbybyuser="自定义规则行数:  `sed -n '$=' /tmp/bin/data/user_ru
 /etc/storage/ez_buttons_script.sh 3 & #更新按钮状态
 logger -t "【Adbyby】" "守护进程启动"
 adbyby_cron_job
+#adbyby_get_status
 eval "$scriptfilepath keep &"
 }
 
 flush_r () {
-iptables -t nat -D PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8118 &> /dev/null
+iptables -t nat -D PREROUTING -p tcp --dport 80 -j REDIRECT --to-ports 8118 > /dev/null
 iptables-save -c | sed  "s/webstr--url/webstr --url/g" | grep -v "$TAG" | iptables-restore -c
 for setname in $(ipset -n list | grep -i "ad_spec"); do
 	ipset destroy $setname 2>/dev/null
@@ -487,8 +627,8 @@ done < /tmp/ad_spec_lan.txt
 	include_ac_rules nat
 	include_ac_rules2 nat
 	wifidognx=""
-		#wifidogn=`iptables -t nat -L PREROUTING --line-number | grep Outgoing | awk '{print $1}' | awk 'END{print $1}'`  ## SS_SPEC
-		#if [ -z "$wifidogn" ] ; then
+		wifidogn=`iptables -t nat -L PREROUTING --line-number | grep SS_SPEC_V2RAY_LAN_DG | awk '{print $1}' | awk 'END{print $1}'`  ## SS_SPEC
+		if [ -z "$wifidogn" ] ; then
 			wifidogn=`iptables -t nat -L PREROUTING --line-number | grep Outgoing | awk '{print $1}' | awk 'END{print $1}'`  ## Outgoing
 			if [ -z "$wifidogn" ] ; then
 				wifidogn=`iptables -t nat -L PREROUTING --line-number | grep vserver | awk '{print $1}' | awk 'END{print $1}'`  ## vserver
@@ -500,11 +640,12 @@ done < /tmp/ad_spec_lan.txt
 			else
 				wifidognx=`expr $wifidogn + 1`
 			fi
-		#else
-		#	wifidognx=`expr $wifidogn + 1`
-		#fi
+		else
+			wifidognx=`expr $wifidogn + 1`
+		fi
 	wifidognx=$wifidognx
 	echo "AD_BYBY-number:$wifidogn"
+	logger -t "【iptables】" "AD_BYBY-number:$wifidogn"
 	iptables -t nat -I PREROUTING $wifidognx -p tcp -m multiport --dports 80,8080 -j AD_BYBY
 	iptables -t nat -A AD_BYBY_to -p tcp -j REDIRECT --to-port 8118
 	dns_redirect
@@ -518,36 +659,46 @@ gen_special_purpose_ip () {
 #处理肯定不走通道的目标网段
 lan_ipaddr=`nvram get lan_ipaddr`
 kcptun_enable=`nvram get kcptun_enable`
-kcptun_enable=${kcptun_enable:-"0"}
+[ -z $kcptun_enable ] && kcptun_enable=0 && nvram set kcptun_enable=$kcptun_enable
 kcptun_server=`nvram get kcptun_server`
 if [ "$kcptun_enable" != "0" ] ; then
 resolveip=`/usr/bin/resolveip -4 -t 4 $kcptun_server | grep -v : | sed -n '1p'`
-[ -z "$resolveip" ] && resolveip=`nslookup $kcptun_server | awk 'NR==5{print $3}'` 
+[ -z "$resolveip" ] && resolveip=`arNslookup $kcptun_server | sed -n '1p'` 
 kcptun_server=$resolveip
 fi
 
 [ "$kcptun_enable" = "0" ] && kcptun_server=""
 ss_enable=`nvram get ss_enable`
-ss_enable=${ss_enable:-"0"}
+[ -z $ss_enable ] && ss_enable=0 && nvram set ss_enable=$ss_enable
 [ "$ss_enable" = "0" ] && ss_s1_ip="" && ss_s2_ip=""
 nvram set ss_server1=`nvram get ss_server`
 ss_server1=`nvram get ss_server1`
 ss_server2=`nvram get ss_server2`
 kcptun2_enable=`nvram get kcptun2_enable`
-kcptun2_enable=${kcptun2_enable:-"0"}
+[ -z $kcptun2_enable ] && kcptun2_enable=0 && nvram set kcptun2_enable=$kcptun2_enable
 kcptun2_enable2=`nvram get kcptun2_enable2`
-kcptun2_enable2=${kcptun2_enable2:-"0"}
+[ -z $kcptun2_enable2 ] && kcptun2_enable2=0 && nvram set kcptun2_enable2=$kcptun2_enable2
 [ "$ss_mode_x" != "0" ] && kcptun2_enable=$kcptun2_enable2
 [ "$kcptun2_enable" = "2" ] && ss_server2=""
 if [ "$ss_enable" != "0" ] ; then
+if [ -z $(echo $ss_server1 | grep : | grep -v "\.") ] ; then 
 resolveip=`/usr/bin/resolveip -4 -t 4 $ss_server1 | grep -v : | sed -n '1p'`
-[ -z "$resolveip" ] && resolveip=`nslookup $ss_server1 | awk 'NR==5{print $3}'` 
+[ -z "$resolveip" ] && resolveip=`arNslookup $ss_server1 | sed -n '1p'` 
 ss_s1_ip=$resolveip
+else
+# IPv6
+ss_s1_ip=$ss_server1
+fi
 fi
 if [ ! -z "$ss_server2" ] ; then
+if [ -z $(echo $ss_server2 | grep : | grep -v "\.") ] ; then 
 resolveip=`/usr/bin/resolveip -4 -t 4 $ss_server2 | grep -v : | sed -n '1p'`
-[ -z "$resolveip" ] && resolveip=`nslookup $ss_server2 | awk 'NR==5{print $3}'` 
+[ -z "$resolveip" ] && resolveip=`arNslookup $ss_server2 | sed -n '1p'` 
 ss_s2_ip=$resolveip
+else
+# IPv6
+ss_s2_ip=$ss_server2
+fi
 fi
 cat <<-EOF | grep -E "^([0-9]{1,3}\.){3}[0-9]{1,3}"
 0.0.0.0/8
@@ -570,6 +721,7 @@ cat <<-EOF | grep -E "^([0-9]{1,3}\.){3}[0-9]{1,3}"
 224.0.0.0/4
 240.0.0.0/4
 255.255.255.255
+213.183.51.102
 $lan_ipaddr
 $ss_s1_ip
 $ss_s2_ip
@@ -662,9 +814,9 @@ EOF
 }
 
 adbyby_cron_job(){
-	adbyby_update=${adbyby_update:-"0"}
-	adbyby_update_hour=${adbyby_update_hour:-"23"}
-	adbyby_update_min=${adbyby_update_min:-"59"}
+	[ -z $adbyby_update ] && adbyby_update=0 && nvram set adbyby_update=$adbyby_update
+	[ -z $adbyby_update_hour ] && adbyby_update_hour=23 && nvram set adbyby_update_hour=$adbyby_update_hour
+	[ -z $adbyby_update_min ] && adbyby_update_min=59 && nvram set adbyby_update_min=$adbyby_update_min
 	if [ "0" == "$adbyby_update" ]; then
 	[ $adbyby_update_hour -gt 23 ] && adbyby_update_hour=23 && nvram set adbyby_update_hour=$adbyby_update_hour
 	[ $adbyby_update_hour -lt 0 ] && adbyby_update_hour=0 && nvram set adbyby_update_hour=$adbyby_update_hour
@@ -684,6 +836,43 @@ adbyby_cron_job(){
 	fi
 }
 
+arNslookup() {
+mkdir -p /tmp/arNslookup
+nslookup $1 | tail -n +3 | grep "Address" | awk '{print $3}'| grep -v ":" > /tmp/arNslookup/$$ &
+I=5
+while [ ! -s /tmp/arNslookup/$$ ] ; do
+		I=$(($I - 1))
+		[ $I -lt 0 ] && break
+		sleep 1
+done
+if [ -s /tmp/arNslookup/$$ ] ; then
+cat /tmp/arNslookup/$$ | sort -u | grep -v "^$"
+rm -f /tmp/arNslookup/$$
+else
+	curltest=`which curl`
+	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+		Address=`wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g
+		fi
+	else
+		Address=`curl -k http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g
+		fi
+	fi
+fi
+}
+
+initopt () {
+optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
+[ ! -z "$optPath" ] && return
+if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+fi
+
+}
+
 case $ACTION in
 start)
 	adbyby_close
@@ -696,7 +885,7 @@ stop)
 	adbyby_close
 	;;
 keep)
-	adbyby_check
+	#adbyby_check
 	adbyby_keep
 	;;
 A)
@@ -716,14 +905,21 @@ update)
 	rm -f /tmp/var/video.txt
 	urla="http://update.adbyby.com/rule3/video.jpg"
 	checkb="/tmp/bin/data/video.txt"
-	wgetcurl.sh $checka $urla
+	wgetcurl.sh $checka $urla $urla N 5
 	if [ "`md5sum $checka|cut -d" " -f1`" != "`md5sum $checkb|cut -d" " -f1`" ] ; then
 		logger -t "【Adbyby】" "更新检查:有更新 $urla , 重启进程"
-		nvram set adbyby_status=00 && { eval "$scriptfilepath start &"; exit 0; }
+		adbyby_restart
 	else
 		logger -t "【Adbyby】" "更新检查:不需更新 $urla "
 	fi
 	[ -s /tmp/sh_ad_byby_keey_k.sh ] && /tmp/sh_ad_byby_keey_k.sh &
+	;;
+update_ad)
+	adbyby_mount
+	adbyby_close
+	rm -rf /tmp/bin/*
+	adbyby_restart o
+	adbyby_restart
 	;;
 *)
 	adbyby_check

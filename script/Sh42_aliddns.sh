@@ -1,26 +1,63 @@
 #!/bin/sh
 #copyright by hiboy
 source /etc/storage/script/init.sh
-nvramshow=`nvram showall | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+aliddns_enable=`nvram get aliddns_enable`
+[ -z $aliddns_enable ] && aliddns_enable=0 && nvram set aliddns_enable=0
+if [ "$aliddns_enable" != "0" ] ; then
+nvramshow=`nvram showall | grep '=' | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
 hostIP=""
 domain=""
 name=""
 name1=""
 timestamp=`date -u "+%Y-%m-%dT%H%%3A%M%%3A%SZ"`
 aliddns_record_id=""
-aliddns_interval=${aliddns_interval:-"600"}
-aliddns_ttl=${aliddns_interval:-"600"}
-
-[ -z $aliddns_enable ] && aliddns_enable=0 && nvram set aliddns_enable=0
+[ -z $aliddns_interval ] && aliddns_interval=600 && nvram set aliddns_interval=$aliddns_interval
+[ -z $aliddns_ttl ] && aliddns_ttl=600 && nvram set aliddns_ttl=$aliddns_ttl
+fi
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep aliddns)" ]  && [ ! -s /tmp/script/_aliddns ]; then
 	mkdir -p /tmp/script
-	ln -sf $scriptfilepath /tmp/script/_aliddns
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_aliddns
 	chmod 777 /tmp/script/_aliddns
 fi
 
+aliddns_restart () {
 
-aliddns_check () {
+relock="/var/lock/aliddns_restart.lock"
+if [ "$1" = "o" ] ; then
+	nvram set aliddns_renum="0"
+	[ -f $relock ] && rm -f $relock
+	return 0
+fi
+if [ "$1" = "x" ] ; then
+	if [ -f $relock ] ; then
+		logger -t "【aliddns】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		exit 0
+	fi
+	aliddns_renum=${aliddns_renum:-"0"}
+	aliddns_renum=`expr $aliddns_renum + 1`
+	nvram set aliddns_renum="$aliddns_renum"
+	if [ "$aliddns_renum" -gt "2" ] ; then
+		I=19
+		echo $I > $relock
+		logger -t "【aliddns】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		while [ $I -gt 0 ]; do
+			I=$(($I - 1))
+			echo $I > $relock
+			sleep 60
+			[ "$(nvram get aliddns_renum)" = "0" ] && exit 0
+			[ $I -lt 0 ] && break
+		done
+		nvram set aliddns_renum="0"
+	fi
+	[ -f $relock ] && rm -f $relock
+fi
+nvram set aliddns_status=0
+eval "$scriptfilepath &"
+exit 0
+}
+
+aliddns_get_status () {
 
 A_restart=`nvram get aliddns_status`
 B_restart="$aliddns_enable$aliddns_interval$aliddns_ak$aliddns_sk$aliddns_domain$aliddns_name$aliddns_domain2$aliddns_name2$aliddns_ttl$(cat /etc/storage/ddns_script.sh | grep -v '^#' | grep -v "^$")"
@@ -31,16 +68,21 @@ if [ "$A_restart" != "$B_restart" ] ; then
 else
 	needed_restart=0
 fi
+}
+
+aliddns_check () {
+
+aliddns_get_status
 if [ "$aliddns_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
-	[ ! -z "$(ps - w | grep "$scriptname keep" | grep -v grep )" ] && logger -t "【aliddns动态域名】" "停止 aliddns" && aliddns_close
-	{ eval $(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1;}'); exit 0; }
+	[ ! -z "$(ps -w | grep "$scriptname keep" | grep -v grep )" ] && logger -t "【aliddns动态域名】" "停止 aliddns" && aliddns_close
+	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
 fi
 if [ "$aliddns_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
 		aliddns_close
 		eval "$scriptfilepath keep &"
 	else
-		[ -z "$(ps - w | grep "$scriptname keep" | grep -v grep )" ] || [ ! -s "`which curl`" ] && nvram set aliddns_status=00 &&  { eval "$scriptfilepath start &"; exit 0; }
+		[ -z "$(ps -w | grep "$scriptname keep" | grep -v grep )" ] || [ ! -s "`which curl`" ] && aliddns_restart
 	fi
 fi
 }
@@ -50,9 +92,9 @@ aliddns_start
 logger -t "【AliDDNS动态域名】" "守护进程启动"
 while true; do
 sleep 43
-[ ! -s "`which curl`" ] && nvram set aliddns_status=00 &&  { eval "$scriptfilepath start &"; exit 0; }
 sleep $aliddns_interval
-nvramshow=`nvram showall | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+[ ! -s "`which curl`" ] && aliddns_restart
+nvramshow=`nvram showall | grep '=' | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
 [ "$aliddns_enable" = "0" ] && aliddns_close && exit 0;
 if [ "$aliddns_enable" = "1" ] ; then
 	aliddns_start
@@ -62,7 +104,9 @@ done
 
 aliddns_close () {
 
-eval $(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1;}')
+eval $(ps -w | grep "_aliddns keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "_aliddns.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
 }
 
 aliddns_start () {
@@ -74,7 +118,9 @@ if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
 		logger -t "【AliDDNS动态域名】" "找不到 curl ，需要手动安装 opt 后输入[opkg install curl]安装"
-		logger -t "【AliDDNS动态域名】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && { nvram set aliddns_status=00; eval "$scriptfilepath &"; exit 0; }
+		logger -t "【AliDDNS动态域名】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && aliddns_restart x
+	else
+		aliddns_restart o
 	fi
 fi
 sleep 1
@@ -93,7 +139,6 @@ if [ "$aliddns_domain2"x != "x" ] && [ "$aliddns_name2" != "baidu.com" ] ; then
 fi
 
 }
-
 
 urlencode() {
     # urlencode <string>
@@ -149,15 +194,17 @@ cat > "/etc/storage/ddns_script.sh" <<-\EEE
 arIpAddress () {
 curltest=`which curl`
 if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-wget --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip"
-#wget --no-check-certificate --quiet --output-document=- "1212.ip138.com/ic.asp" | grep -E -o '([0-9]+\.){3}[0-9]+'
-#wget --no-check-certificate --quiet --output-document=- "ip.6655.com/ip.aspx"
-#wget --no-check-certificate --quiet --output-document=- "ip.3322.net"
+    wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "1212.ip138.com/ic.asp" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "ip.6655.com/ip.aspx" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+'
 else
-curl -k -s "http://members.3322.org/dyndns/getip"
-#curl -k -s 1212.ip138.com/ic.asp | grep -E -o '([0-9]+\.){3}[0-9]+'
-#curl -k -s ip.6655.com/ip.aspx
-#curl -k -s ip.3322.net
+    curl -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s 1212.ip138.com/ic.asp | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s ip.6655.com/ip.aspx | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+'
 fi
 }
 arIpAddress=$(arIpAddress)
@@ -194,7 +241,7 @@ esac
 		;;
 	*)
 		echo "Get Record Info Failed!"
-		logger -t "【AliDDNS动态域名】" "获取记录信息失败！"
+		#logger -t "【AliDDNS动态域名】" "获取记录信息失败！"
 		return 1
 		;;
 	esac
@@ -205,11 +252,15 @@ esac
 arNslookup() {
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1
-		return $?
+		Address=`wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g | sed -n '1p'
+		fi
 	else
-		curl -k http://119.29.29.29/d?dn=$1
-		return $?
+		Address=`curl -k http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g | sed -n '1p'
+		fi
 	fi
 }
 
@@ -265,6 +316,18 @@ arDdnsCheck() {
 	local lastIP
 	source /etc/storage/ddns_script.sh
 	hostIP=$arIpAddress
+	if [ "$hostIP"x ="x"  ] ; then
+		curltest=`which curl`
+		if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+			hostIP=`wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
+		else
+			hostIP=`curl -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
+		fi
+		if [ "$hostIP"x ="x"  ] ; then
+			logger -t "【DNSPod动态域名】" "错误！获取目前 IP 失败，请在脚本更换其他获取地址"
+			return 1
+		fi
+	fi
 	echo "Updating Domain: ${2}.${1}"
 	echo "hostIP: ${hostIP}"
 	lastIP=$(arDdnsInfo "$1 $2")
@@ -296,8 +359,8 @@ arDdnsCheck() {
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -s "/opt/etc/init.d/rc.func" ] ; then
-	ln -sf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
 fi
 
 }

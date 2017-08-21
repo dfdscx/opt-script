@@ -1,10 +1,10 @@
 #!/bin/sh
 #copyright by hiboy
 source /etc/storage/script/init.sh
-nvramshow=`nvram showall | grep mentohust | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-
+mentohust_enable=`nvram get mentohust_enable`
 [ -z $mentohust_enable ] && mentohust_enable=0 && nvram set mentohust_enable=0
-
+if [ "$mentohust_enable" != "0" ] ; then
+nvramshow=`nvram showall | grep '=' | grep mentohust | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
 [ -z $mentohust_path ] && mentohust_path="/usr/bin/mentohust" && nvram set mentohust_path=$mentohust_path
 [ -z $mentohust_n ] && mentohust_n=$(nvram get wan0_ifname_t) && nvram set mentohust_n=$mentohust_n
 [ -z $mentohust_i ] && mentohust_i="0.0.0.0" && nvram set mentohust_i=$mentohust_i
@@ -21,15 +21,51 @@ nvramshow=`nvram showall | grep mentohust | awk '{print gensub(/'"'"'/,"'"'"'\"'
 [ -z $mentohust_b ] && mentohust_b="0" && nvram set mentohust_b=$mentohust_b
 [ -z $mentohust_v ] && mentohust_v="0.00" && nvram set mentohust_v=$mentohust_v
 [ -z $mentohust_c ] && mentohust_c="dhclinet" && nvram set mentohust_c=$mentohust_c
-
+fi
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep mento_hust)" ]  && [ ! -s /tmp/script/_mento_hust ]; then
 	mkdir -p /tmp/script
-	ln -sf $scriptfilepath /tmp/script/_mento_hust
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_mento_hust
 	chmod 777 /tmp/script/_mento_hust
 fi
 
-mentohust_check () {
+mentohust_restart () {
+
+relock="/var/lock/mentohust_restart.lock"
+if [ "$1" = "o" ] ; then
+	nvram set mentohust_renum="0"
+	[ -f $relock ] && rm -f $relock
+	return 0
+fi
+if [ "$1" = "x" ] ; then
+	if [ -f $relock ] ; then
+		logger -t "【MentoHUST】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		exit 0
+	fi
+	mentohust_renum=${mentohust_renum:-"0"}
+	mentohust_renum=`expr $mentohust_renum + 1`
+	nvram set mentohust_renum="$mentohust_renum"
+	if [ "$mentohust_renum" -gt "2" ] ; then
+		I=19
+		echo $I > $relock
+		logger -t "【MentoHUST】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		while [ $I -gt 0 ]; do
+			I=$(($I - 1))
+			echo $I > $relock
+			sleep 60
+			[ "$(nvram get mentohust_renum)" = "0" ] && exit 0
+			[ $I -lt 0 ] && break
+		done
+		nvram set mentohust_renum="0"
+	fi
+	[ -f $relock ] && rm -f $relock
+fi
+nvram set mentohust_status=0
+eval "$scriptfilepath &"
+exit 0
+}
+
+mentohust_get_status () {
 
 A_restart=`nvram get mentohust_status`
 B_restart="$mentohust_enable$mentohust_path$mentohust_u$mentohust_p$mentohust_n$mentohust_i$mentohust_m$mentohust_g$mentohust_s$mentohust_o$mentohust_t$mentohust_e$mentohust_r$mentohust_a$mentohust_d$mentohust_b$mentohust_v$mentohust_f$mentohust_c"
@@ -40,9 +76,14 @@ if [ "$A_restart" != "$B_restart" ] ; then
 else
 	needed_restart=0
 fi
+}
+
+mentohust_check () {
+
+mentohust_get_status
 if [ "$mentohust_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "`pidof mentohust`" ] && logger -t "【MentoHUST】" "停止 mentohust" && mentohust_close
-	{ eval $(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1;}'); exit 0; }
+	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
 fi
 if [ "$mentohust_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -50,6 +91,8 @@ if [ "$mentohust_enable" = "1" ] ; then
 		rm -f /etc/storage/mentohust.conf
 		mentohust_close
 		mentohust_start
+	else
+		[ -z "`pidof mentohust`" ] && mentohust_restart
 	fi
 fi
 }
@@ -66,7 +109,7 @@ fi
 while true; do
 	if [ -z "`pidof mentohust`" ] || [ ! -s "$mentohust_path" ] ; then
 		logger -t "【mentohust】" "重新启动"
-		{ nvram set mentohust_status=00 && eval "$scriptfilepath &" ; exit 0; }
+		mentohust_restart
 	fi
 sleep 104
 done
@@ -76,7 +119,9 @@ mentohust_close () {
 sed -Ei '/【mentohust】|^$/d' /tmp/script/_opt_script_check
 killall mentohust
 killall -9 mentohust
-eval $(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1;}')
+eval $(ps -w | grep "_mento_hust keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "_mento_hust.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
 }
 
 mentohust_start () {
@@ -102,7 +147,7 @@ else
 fi
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【MentoHUST】" "找不到 $SVC_PATH ，需要手动安装 $SVC_PATH"
-	logger -t "【MentoHUST】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && { nvram set mentohust_status=00; eval "$scriptfilepath &"; exit 0; }
+	logger -t "【MentoHUST】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && mentohust_restart x
 fi
 if [ -s "$SVC_PATH" ] ; then
 	nvram set mentohust_path="$SVC_PATH"
@@ -130,16 +175,17 @@ logger -t "【MentoHUST】" "赛尔模式"
    $mentohust_path -s8.8.8.8 > /dev/null 2>&1 
 fi
 sleep 2
-[ ! -z "`pidof mentohust`" ] && logger -t "【MentoHUST】" "启动成功"
-[ -z "`pidof mentohust`" ] && logger -t "【MentoHUST】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && { nvram set mentohust_status=00; eval "$scriptfilepath &"; exit 0; }
+[ ! -z "`pidof mentohust`" ] && logger -t "【MentoHUST】" "启动成功" && mentohust_restart o
+[ -z "`pidof mentohust`" ] && logger -t "【MentoHUST】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && mentohust_restart x
+#mentohust_get_status
 eval "$scriptfilepath keep &"
 }
 
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -s "/opt/etc/init.d/rc.func" ] ; then
-	ln -sf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
 fi
 
 }
@@ -156,7 +202,7 @@ stop)
 	mentohust_close
 	;;
 keep)
-	mentohust_check
+	#mentohust_check
 	mentohust_keep
 	;;
 *)

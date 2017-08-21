@@ -1,32 +1,72 @@
 #!/bin/sh
 #copyright by hiboy
 source /etc/storage/script/init.sh
-nvramshow=`nvram showall | grep ss | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-nvramshow=`nvram showall | grep kcptun | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-
+kcptun_enable=`nvram get kcptun_enable`
 [ -z $kcptun_enable ] && kcptun_enable=0 && nvram set kcptun_enable=0
+kcptun_path=`nvram get kcptun_path`
+[ -z $kcptun_path ] && kcptun_path="/opt/bin/client_linux_mips" && nvram set kcptun_path=$kcptun_path
+if [ "$kcptun_enable" != "0" ] ; then
+nvramshow=`nvram showall | grep '=' | grep ss | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+nvramshow=`nvram showall | grep '=' | grep kcptun | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
 
 kcptun_s_server=""
-kcptun_sport=${kcptun_sport:-"29900"}
-kcptun_crypt=${kcptun_crypt:-"none"}
-kcptun_lport=${kcptun_lport:-"8388"}
-kcptun_sndwnd=${kcptun_sndwnd:-"1024"}
-kcptun_rcvwnd=${kcptun_rcvwnd:-"1024"}
-kcptun_mode=${kcptun_mode:-"fast"}
-kcptun_mtu=${kcptun_mtu:-"1350"}
-kcptun_dscp=${kcptun_dscp:-"0"}
-kcptun_datashard=${kcptun_datashard:-"10"}
-kcptun_parityshard=${kcptun_parityshard:-"3"}
-kcptun_autoexpire=${kcptun_autoexpire:-"0"}
-kcptun_path=${kcptun_path:-"/opt/bin/client_linux_mips"}
-
+[ -z $kcptun_sport ] && kcptun_sport=29900 && nvram set kcptun_sport=$kcptun_sport
+[ -z $kcptun_crypt ] && kcptun_crypt="none" && nvram set kcptun_crypt=$kcptun_crypt
+[ -z $kcptun_lport ] && kcptun_lport=8388 && nvram set kcptun_lport=$kcptun_lport
+[ -z $kcptun_sndwnd ] && kcptun_sndwnd="1024" && nvram set kcptun_sndwnd=$kcptun_sndwnd
+[ -z $kcptun_rcvwnd ] && kcptun_rcvwnd="1024" && nvram set kcptun_rcvwnd=$kcptun_rcvwnd
+[ -z $kcptun_mode ] && kcptun_mode="fast" && nvram set kcptun_mode=$kcptun_mode
+[ -z $kcptun_mtu ] && kcptun_mtu="1350" && nvram set kcptun_mtu=$kcptun_mtu
+[ -z $kcptun_dscp ] && kcptun_dscp=0 && nvram set kcptun_dscp=$kcptun_dscp
+[ -z $kcptun_datashard ] && kcptun_datashard=10 && nvram set kcptun_datashard=$kcptun_datashard
+[ -z $kcptun_parityshard ] && kcptun_parityshard=3 && nvram set kcptun_parityshard=$kcptun_parityshard
+[ -z $kcptun_autoexpire ] && kcptun_autoexpire=0 && nvram set kcptun_autoexpire=$kcptun_autoexpire
+fi
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep kcp_tun)" ]  && [ ! -s /tmp/script/_kcp_tun ]; then
 	mkdir -p /tmp/script
-	ln -sf $scriptfilepath /tmp/script/_kcp_tun
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_kcp_tun
 	chmod 777 /tmp/script/_kcp_tun
 fi
 
-kcptun_check () {
+kcptun_restart () {
+
+relock="/var/lock/kcptun_restart.lock"
+if [ "$1" = "o" ] ; then
+	nvram set kcptun_renum="0"
+	[ -f $relock ] && rm -f $relock
+	return 0
+fi
+if [ "$1" = "x" ] ; then
+	if [ -f $relock ] ; then
+		logger -t "【kcptun】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		exit 0
+	fi
+	kcptun_renum=${kcptun_renum:-"0"}
+	kcptun_renum=`expr $kcptun_renum + 1`
+	nvram set kcptun_renum="$kcptun_renum"
+	if [ "$kcptun_renum" -gt "2" ] ; then
+		I=19
+		echo $I > $relock
+		logger -t "【kcptun】" "多次尝试启动失败，等待【"`cat $relock`"分钟】后自动尝试重新启动"
+		while [ $I -gt 0 ]; do
+			I=$(($I - 1))
+			echo $I > $relock
+			sleep 60
+			[ "$(nvram get kcptun_renum)" = "0" ] && exit 0
+			[ $I -lt 0 ] && break
+		done
+		nvram set kcptun_renum="0"
+	fi
+	[ -f $relock ] && rm -f $relock
+fi
+nvram set kcptun_status=0
+eval "$scriptfilepath &"
+exit 0
+}
+
+kcptun_get_status () {
+
 A_restart=`nvram get kcptun_status`
 B_restart="$kcptun_enable$kcptun_user$kcptun_path$kcptun_parityshard$kcptun_datashard$kcptun_server$kcptun_sport$kcptun_key$kcptun_crypt$kcptun_lport$kcptun_sndwnd$kcptun_rcvwnd$kcptun_mode$kcptun_mtu$kcptun_dscp$(cat /etc/storage/kcptun_script.sh | grep -v '^#' | grep -v "^$")"
 B_restart=`echo -n "$B_restart" | md5sum | sed s/[[:space:]]//g | sed s/-//g`
@@ -36,14 +76,21 @@ if [ "$A_restart" != "$B_restart" ] ; then
 else
 	needed_restart=0
 fi
+}
+
+kcptun_check () {
+
+kcptun_get_status
 if [ "$kcptun_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
-	[ ! -z "$(ps - w | grep "$kcptun_path" | grep -v grep )" ] && logger -t "【kcptun】" "停止 $kcptun_path" && kcptun_close
-	{ eval $(ps - w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1;}'); exit 0; }
+	[ ! -z "$(ps -w | grep "$kcptun_path" | grep -v grep )" ] && logger -t "【kcptun】" "停止 $kcptun_path" && kcptun_close
+	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
 fi
 if [ "$kcptun_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
 		kcptun_close
 		kcptun_start
+	else
+		[ -z "$(ps -w | grep "$kcptun_path" | grep -v grep )" ] && kcptun_restart
 	fi
 fi
 
@@ -65,10 +112,10 @@ return
 fi
 
 while true; do
-	NUM=`ps - w | grep "$kcptun_path" | grep -v grep |wc -l`
+	NUM=`ps -w | grep "$kcptun_path" | grep -v grep |wc -l`
 	if [ "$NUM" -lt "$KCPNUM" ] || [ "$NUM" -gt "$KCPNUM" ] || [ ! -s "$kcptun_path" ] ; then
 		logger -t "【kcptun】" "重新启动$NUM"
-		{ nvram set kcptun_status=00 && eval "$scriptfilepath &" ; exit 0; }
+		kcptun_restart
 	fi
 sleep 214
 done
@@ -77,10 +124,12 @@ done
 kcptun_close () {
 
 sed -Ei '/【kcptun】|^$/d' /tmp/script/_opt_script_check
-[ ! -z "$kcptun_path" ] && eval $(ps - w | grep "$kcptun_path" | grep -v grep | awk '{print "kill "$1}')
+[ ! -z "$kcptun_path" ] && eval $(ps -w | grep "$kcptun_path" | grep -v grep | awk '{print "kill "$1";";}')
 killall client_linux_mips kcptun_script.sh sh_kcpkeep.sh
 killall -9 client_linux_mips kcptun_script.sh sh_kcpkeep.sh
-eval $(ps - w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1;}')
+eval $(ps -w | grep "_kcp_tun keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "_kcp_tun.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
+eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
 }
 
 kcptun_start () {
@@ -93,7 +142,6 @@ hash client_linux_mips 2>/dev/null || rm -rf /opt/bin/client_linux_mips
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【kcptun】" "找不到 $kcptun_path，安装 opt 程序"
 	/tmp/script/_mountopt start
-	initopt
 fi
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【kcptun】" "找不到 $SVC_PATH 下载程序"
@@ -104,7 +152,7 @@ else
 fi
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【kcptun】" "找不到 $SVC_PATH ，需要手动安装 $SVC_PATH"
-	logger -t "【kcptun】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && { nvram set kcptun_status=00; eval "$scriptfilepath &"; exit 0; }
+	logger -t "【kcptun】" "启动失败, 10 秒后自动尝试重新启动" && sleep 10 && kcptun_restart x
 fi
 if [ -s "$SVC_PATH" ] ; then
 	nvram set kcptun_path="$SVC_PATH"
@@ -116,9 +164,9 @@ logger -t "【kcptun】" "kcptun-version: $kcptun_v"
 logger -t "【kcptun】" "运行 kcptun_script"
 
 resolveip=`/usr/bin/resolveip -4 -t 4 $kcptun_server | grep -v : | sed -n '1p'`
-[ -z "$resolveip" ] && resolveip=`nslookup $kcptun_server | awk 'NR==5{print $3}'` 
+[ -z "$resolveip" ] && resolveip=`arNslookup $kcptun_server | sed -n '1p'` 
 kcptun_s_server=$resolveip
-[ -z "$kcptun_s_server" ] && { logger -t "【kcptun】" "[错误!!] 实在找不到你的 kcptun 服务器IP，麻烦看看哪里错了？10 秒后自动尝试重新启动" && sleep 10 && nvram set kcptun_status=00; eval "$scriptfilepath &"; exit 0; }
+[ -z "$kcptun_s_server" ] && logger -t "【kcptun】" "[错误!!] 实在找不到你的 kcptun 服务器IP，麻烦看看哪里错了？10 秒后自动尝试重新启动" && sleep 10 && kcptun_restart x
 
 sed -Ei '/UI设置自动生成/d' /etc/storage/kcptun_script.sh
 sed -Ei '/^$/d' /etc/storage/kcptun_script.sh
@@ -143,22 +191,47 @@ EUI
 
 /etc/storage/kcptun_script.sh &
 restart_dhcpd
-B_restart="$kcptun_enable$kcptun_user$kcptun_path$kcptun_parityshard$kcptun_datashard$kcptun_server$kcptun_sport$kcptun_key$kcptun_crypt$kcptun_lport$kcptun_sndwnd$kcptun_rcvwnd$kcptun_mode$kcptun_mtu$kcptun_dscp$(cat /etc/storage/kcptun_script.sh | grep -v '^#' | grep -v "^$")"
-B_restart=`echo -n "$B_restart" | md5sum | sed s/[[:space:]]//g | sed s/-//g`
-[ "$A_restart" != "$B_restart" ] && nvram set kcptun_status=$B_restart
 sleep 2
-[ ! -z "$(ps - w | grep "$kcptun_path" | grep -v grep )" ] && logger -t "【kcptun】" "启动成功"
-[ -z "$(ps - w | grep "$kcptun_path" | grep -v grep )" ] && logger -t "【kcptun】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && { nvram set kcptun_status=00; eval "$scriptfilepath &"; exit 0; }
-
-
+[ ! -z "$(ps -w | grep "$kcptun_path" | grep -v grep )" ] && logger -t "【kcptun】" "启动成功" && kcptun_restart o
+[ -z "$(ps -w | grep "$kcptun_path" | grep -v grep )" ] && logger -t "【kcptun】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && kcptun_restart x
+initopt
+kcptun_get_status
 eval "$scriptfilepath keep &"
+}
+
+arNslookup() {
+mkdir -p /tmp/arNslookup
+nslookup $1 | tail -n +3 | grep "Address" | awk '{print $3}'| grep -v ":" > /tmp/arNslookup/$$ &
+I=5
+while [ ! -s /tmp/arNslookup/$$ ] ; do
+		I=$(($I - 1))
+		[ $I -lt 0 ] && break
+		sleep 1
+done
+if [ -s /tmp/arNslookup/$$ ] ; then
+cat /tmp/arNslookup/$$ | sort -u | grep -v "^$"
+rm -f /tmp/arNslookup/$$
+else
+	curltest=`which curl`
+	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+		Address=`wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g
+		fi
+	else
+		Address=`curl -k http://119.29.29.29/d?dn=$1`
+		if [ $? -eq 0 ]; then
+		echo $Address |  sed s/\;/"\n"/g
+		fi
+	fi
+fi
 }
 
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -s "/opt/etc/init.d/rc.func" ] ; then
-	ln -sf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
 fi
 
 }
@@ -175,11 +248,12 @@ stop)
 	kcptun_close
 	;;
 keep)
-	kcptun_check
+	#kcptun_check
 	kcptun_keep
 	;;
 updatekcptun)
-	[ "$kcptun_enable" = "1" ] && nvram set kcptun_status="updatekcptun" && logger -t "【kcptun】" "重启" && { nvram set kcptun_status=00 && eval "$scriptfilepath start &"; exit 0; }
+	kcptun_restart o
+	[ "$kcptun_enable" = "1" ] && nvram set kcptun_status="updatekcptun" && logger -t "【kcptun】" "重启" && kcptun_restart
 	[ "$kcptun_enable" != "1" ] && [ -f "$kcptun_path" ] && nvram set kcptun_v="" && logger -t "【kcptun】" "更新" && rm -rf $kcptun_path
 	;;
 *)
