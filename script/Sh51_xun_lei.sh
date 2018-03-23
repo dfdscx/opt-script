@@ -4,7 +4,10 @@ source /etc/storage/script/init.sh
 xunleis=`nvram get xunleis`
 [ -z $xunleis ] && xunleis=0 && nvram set xunleis=0
 if [ "$xunleis" != "0" ] ; then
-nvramshow=`nvram showall | grep '=' | grep xunlei | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep xunlei | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
+xunleis_dir=`nvram get xunleis_dir`
+
 fi
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep xun_lei)" ]  && [ ! -s /tmp/script/_xun_lei ]; then
@@ -67,7 +70,7 @@ xunlei_check () {
 xunlei_get_status
 if [ "$xunleis" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "`pidof ETMDaemon`" ] && logger -t "【迅雷下载】" "停止 xunleis" && xunlei_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$xunleis" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -133,9 +136,9 @@ sed -Ei '/【迅雷下载】|^$/d' /tmp/script/_opt_script_check
 killall ETMDaemon EmbedThunderManager vod_httpserver portal
 killall -9 ETMDaemon EmbedThunderManager vod_httpserver portal
 rm -f "/opt/etc/init.d/$scriptname"
-eval $(ps -w | grep "_xun_lei keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_xun_lei.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_xun_lei"
+kill_ps "_xun_lei.sh"
+kill_ps "$scriptname"
 }
 
 xunlei_start () {
@@ -143,10 +146,22 @@ SVC_PATH="$xunleis_dir/xunlei/portal"
 if [ ! -s "$SVC_PATH" ] ; then
 	ss_opt_x=`nvram get ss_opt_x`
 	upanPath=""
-	[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-	[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-	[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-	[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
+	[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	if [ "$ss_opt_x" = "5" ] ; then
+		# 指定目录
+		opt_cifs_dir=`nvram get opt_cifs_dir`
+		if [ -d $opt_cifs_dir ] ; then
+			upanPath="$opt_cifs_dir"
+		else
+			logger -t "【opt】" "错误！未找到指定目录 $opt_cifs_dir"
+			upanPath=""
+			[ -z "$upanPath" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+			[ -z "$upanPath" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+		fi
+	fi
 	echo "$upanPath"
 	if [ -z "$upanPath" ] ; then 
 		logger -t "【迅雷下载】" "未挂载储存设备, 请重新检查配置、目录，10 秒后自动尝试重新启动"
@@ -176,7 +191,7 @@ chmod 777 "$xunleis_dir/xunlei" -R
 logger -t "【迅雷下载】" "启动程序"
 cd "$xunleis_dir/xunlei"
 export LD_LIBRARY_PATH="$xunleis_dir/xunlei/lib:/lib:/opt/lib"
-"$xunleis_dir/xunlei/portal" >/dev/null 2>&1 &
+"$xunleis_dir/xunlei/portal" &
 sleep 2
 export LD_LIBRARY_PATH="/lib:/opt/lib"
 sleep 5
@@ -190,8 +205,8 @@ eval "$scriptfilepath keep &"
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
 fi
 
 }

@@ -4,7 +4,17 @@ source /etc/storage/script/init.sh
 aliddns_enable=`nvram get aliddns_enable`
 [ -z $aliddns_enable ] && aliddns_enable=0 && nvram set aliddns_enable=0
 if [ "$aliddns_enable" != "0" ] ; then
-nvramshow=`nvram showall | grep '=' | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
+aliddns_interval=`nvram get aliddns_interval`
+aliddns_ak=`nvram get aliddns_ak`
+aliddns_sk=`nvram get aliddns_sk`
+aliddns_domain=`nvram get aliddns_domain`
+aliddns_name=`nvram get aliddns_name`
+aliddns_domain2=`nvram get aliddns_domain2`
+aliddns_name2=`nvram get aliddns_name2`
+aliddns_ttl=`nvram get aliddns_ttl`
+
 hostIP=""
 domain=""
 name=""
@@ -75,7 +85,7 @@ aliddns_check () {
 aliddns_get_status
 if [ "$aliddns_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "$(ps -w | grep "$scriptname keep" | grep -v grep )" ] && logger -t "【aliddns动态域名】" "停止 aliddns" && aliddns_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$aliddns_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -94,7 +104,8 @@ while true; do
 sleep 43
 sleep $aliddns_interval
 [ ! -s "`which curl`" ] && aliddns_restart
-nvramshow=`nvram showall | grep '=' | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep aliddns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+aliddns_enable=`nvram get aliddns_enable`
 [ "$aliddns_enable" = "0" ] && aliddns_close && exit 0;
 if [ "$aliddns_enable" = "1" ] ; then
 	aliddns_start
@@ -104,9 +115,9 @@ done
 
 aliddns_close () {
 
-eval $(ps -w | grep "_aliddns keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_aliddns.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_aliddns"
+kill_ps "_aliddns.sh"
+kill_ps "$scriptname"
 }
 
 aliddns_start () {
@@ -141,87 +152,63 @@ fi
 }
 
 urlencode() {
-    # urlencode <string>
-    out=""
-    while read -n1 c
-    do
-        case $c in
-            [a-zA-Z0-9._-]) out="$out$c" ;;
-            *) out="$out`printf '%%%02X' "'$c"`" ;;
-        esac
-    done
-    echo -n $out
+	# urlencode <string>
+	out=""
+	while read -n1 c
+	do
+		case $c in
+			[a-zA-Z0-9._-]) out="$out$c" ;;
+			*) out="$out`printf '%%%02X' "'$c"`" ;;
+		esac
+	done
+	echo -n $out
 }
 
 enc() {
-    echo -n "$1" | urlencode
+	echo -n "$1" | urlencode
 }
 
 send_request() {
-    local args="AccessKeyId=$aliddns_ak&Action=$1&Format=json&$2&Version=2015-01-09"
-    local hash=$(echo -n "GET&%2F&$(enc "$args")" | openssl dgst -sha1 -hmac "$aliddns_sk&" -binary | openssl base64)
-    curl -s "http://alidns.aliyuncs.com/?$args&Signature=$(enc "$hash")"
+	local args="AccessKeyId=$aliddns_ak&Action=$1&Format=json&$2&Version=2015-01-09"
+	local hash=$(echo -n "GET&%2F&$(enc "$args")" | openssl dgst -sha1 -hmac "$aliddns_sk&" -binary | openssl base64)
+	curl -s "http://alidns.aliyuncs.com/?$args&Signature=$(enc "$hash")"
 }
 
 get_recordid() {
-    grep -Eo '"RecordId":"[0-9]+"' | cut -d':' -f2 | tr -d '"'
+	grep -Eo '"RecordId":"[0-9]+"' | cut -d':' -f2 | tr -d '"'
 }
 
 get_recordIP() {
-    grep -Eo '"Value":"[0-9\.]*"' | cut -d':' -f2 | tr -d '"'
+	grep -Eo '"Value":"[0-9\.]*"' | cut -d':' -f2 | tr -d '"'
 }
 
 query_recordInfo() {
-    send_request "DescribeDomainRecordInfo" "RecordId=$1&SignatureMethod=HMAC-SHA1&SignatureNonce=$timestamp&SignatureVersion=1.0&Timestamp=$timestamp"
+	send_request "DescribeDomainRecordInfo" "RecordId=$1&SignatureMethod=HMAC-SHA1&SignatureNonce=$timestamp&SignatureVersion=1.0&Timestamp=$timestamp"
 }
 
 query_recordid() {
-    send_request "DescribeSubDomainRecords" "SignatureMethod=HMAC-SHA1&SignatureNonce=$timestamp&SignatureVersion=1.0&SubDomain=$name1.$domain&Timestamp=$timestamp"
+	send_request "DescribeSubDomainRecords" "SignatureMethod=HMAC-SHA1&SignatureNonce=$timestamp&SignatureVersion=1.0&SubDomain=$name1.$domain&Timestamp=$timestamp"
 }
 
 update_record() {
-    send_request "UpdateDomainRecord" "RR=$name1&RecordId=$1&SignatureMethod=HMAC-SHA1&SignatureNonce=$timestamp&SignatureVersion=1.0&TTL=$aliddns_ttl&Timestamp=$timestamp&Type=A&Value=$hostIP"
+	send_request "UpdateDomainRecord" "RR=$name1&RecordId=$1&SignatureMethod=HMAC-SHA1&SignatureNonce=$timestamp&SignatureVersion=1.0&TTL=$aliddns_ttl&Timestamp=$timestamp&Type=A&Value=$hostIP"
 }
 
 add_record() {
-    send_request "AddDomainRecord&DomainName=$domain" "RR=$name1&SignatureMethod=HMAC-SHA1&SignatureNonce=$timestamp&SignatureVersion=1.0&TTL=$aliddns_ttl&Timestamp=$timestamp&Type=A&Value=$hostIP"
+	send_request "AddDomainRecord&DomainName=$domain" "RR=$name1&SignatureMethod=HMAC-SHA1&SignatureNonce=$timestamp&SignatureVersion=1.0&TTL=$aliddns_ttl&Timestamp=$timestamp&Type=A&Value=$hostIP"
 }
-
-if [ ! -s "/etc/storage/ddns_script.sh" ] ; then
-cat > "/etc/storage/ddns_script.sh" <<-\EEE
-# 获得外网地址
-# 自行测试哪个代码能获取正确的IP，删除前面的#可生效
-arIpAddress () {
-curltest=`which curl`
-if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-    wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #wget --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #wget --no-check-certificate --quiet --output-document=- "1212.ip138.com/ic.asp" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #wget --no-check-certificate --quiet --output-document=- "ip.6655.com/ip.aspx" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #wget --no-check-certificate --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+'
-else
-    curl -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #curl -k -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #curl -k -s 1212.ip138.com/ic.asp | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #curl -k -s ip.6655.com/ip.aspx | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #curl -k -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+'
-fi
-}
-arIpAddress=$(arIpAddress)
-EEE
-fi
 
 arDdnsInfo() {
 case  $name  in
-      \*)
-        name1=%2A
-        ;;
-      \@)
-        name1=%40
-        ;;
-      *)
-        name1=$name
-        ;;
+	  \*)
+		name1=%2A
+		;;
+	  \@)
+		name1=%40
+		;;
+	  *)
+		name1=$name
+		;;
 esac
 
 	timestamp=`date -u "+%Y-%m-%dT%H%%3A%M%%3A%SZ"`
@@ -252,14 +239,14 @@ esac
 arNslookup() {
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		Address=`wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`
+		Address="`wget --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`"
 		if [ $? -eq 0 ]; then
-		echo $Address |  sed s/\;/"\n"/g | sed -n '1p'
+		echo "$Address" |  sed s/\;/"\n"/g | sed -n '1p' | grep -E -o '([0-9]+\.){3}[0-9]+'
 		fi
 	else
-		Address=`curl -k http://119.29.29.29/d?dn=$1`
+		Address="`curl -k http://119.29.29.29/d?dn=$1`"
 		if [ $? -eq 0 ]; then
-		echo $Address |  sed s/\;/"\n"/g | sed -n '1p'
+		echo "$Address" |  sed s/\;/"\n"/g | sed -n '1p' | grep -E -o '([0-9]+\.){3}[0-9]+'
 		fi
 	fi
 }
@@ -268,15 +255,15 @@ arNslookup() {
 # 参数: 主域名 子域名
 arDdnsUpdate() {
 case  $name  in
-      \*)
-        name1=%2A
-        ;;
-      \@)
-        name1=%40
-        ;;
-      *)
-        name1=$name
-        ;;
+	  \*)
+		name1=%2A
+		;;
+	  \@)
+		name1=%40
+		;;
+	  *)
+		name1=$name
+		;;
 esac
 	# 获得记录ID
 	timestamp=`date -u "+%Y-%m-%dT%H%%3A%M%%3A%SZ"`
@@ -316,15 +303,15 @@ arDdnsCheck() {
 	local lastIP
 	source /etc/storage/ddns_script.sh
 	hostIP=$arIpAddress
-	if [ "$hostIP"x ="x"  ] ; then
+	if [ "$hostIP"x = "x"  ] ; then
 		curltest=`which curl`
 		if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
 			hostIP=`wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
 		else
-			hostIP=`curl -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
+			hostIP=`curl -L -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
 		fi
-		if [ "$hostIP"x ="x"  ] ; then
-			logger -t "【DNSPod动态域名】" "错误！获取目前 IP 失败，请在脚本更换其他获取地址"
+		if [ "$hostIP"x = "x"  ] ; then
+			logger -t "【AliDDNS动态域名】" "错误！获取目前 IP 失败，请在脚本更换其他获取地址"
 			return 1
 		fi
 	fi
@@ -359,11 +346,40 @@ arDdnsCheck() {
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
 fi
 
 }
+
+initconfig () {
+
+if [ ! -s "/etc/storage/ddns_script.sh" ] ; then
+cat > "/etc/storage/ddns_script.sh" <<-\EEE
+# 获得外网地址
+# 自行测试哪个代码能获取正确的IP，删除前面的#可生效
+arIpAddress () {
+curltest=`which curl`
+if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+    wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "ip.6655.com/ip.aspx" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+'
+else
+    curl -L -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s ip.6655.com/ip.aspx | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+'
+fi
+}
+arIpAddress=$(arIpAddress)
+EEE
+	chmod 755 "$ddns_script"
+fi
+
+}
+
+initconfig
 
 case $ACTION in
 start)

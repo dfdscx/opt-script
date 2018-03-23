@@ -1,6 +1,12 @@
 #!/bin/sh
 #copyright by hiboy
 source /etc/storage/script/init.sh
+
+chinadns_enable=`nvram get app_1`
+[ -z $chinadns_enable ] && chinadns_enable=0 && nvram set app_1=0
+#if [ "$chinadns_enable" != "0" ] ; then
+#nvramshow=`nvram showall | grep '=' | grep chinadns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#fi
 chinadns_enable=`nvram get app_1`
 [ -z $chinadns_enable ] && chinadns_enable=0 && nvram set app_1=0
 chinadns_d=`nvram get app_2`
@@ -14,9 +20,6 @@ chinadns_dnss=`nvram get app_5`
 chinadns_port=`nvram get app_6`
 [ -z $chinadns_port ] && chinadns_port=8053 && nvram set app_6=8053
 
-# if [ "$chinadns_enable" != "0" ] ; then
-# nvramshow=`nvram showall | grep '=' | grep chinadns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-# fi
 
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep chinadns)" ]  && [ ! -s /tmp/script/_app1 ]; then
@@ -27,6 +30,7 @@ fi
 
 chinadns_restart () {
 
+chinadns_renum=`nvram get chinadns_renum`
 relock="/var/lock/chinadns_restart.lock"
 if [ "$1" = "o" ] ; then
 	nvram set chinadns_renum="0"
@@ -80,7 +84,7 @@ chinadns_check () {
 chinadns_get_status
 if [ "$chinadns_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "$(ps -w | grep "$chinadns_path" | grep -v grep )" ] && logger -t "【chinadns】" "停止 chinadns" && chinadns_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$chinadns_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -91,7 +95,15 @@ if [ "$chinadns_enable" = "1" ] ; then
 		port=$(grep "server=127.0.0.1#$chinadns_port"  /etc/storage/dnsmasq/dnsmasq.conf | wc -l)
 		if [ "$port" = 0 ] ; then
 			logger -t "【chinadns】" "检测:找不到 dnsmasq 转发规则, 重新添加"
-			chinadns_restart
+			# 写入dnsmasq配置
+			sed -Ei '/no-resolv|server=|server=127.0.0.1|dns-forward-max=1000|min-cache-ttl=1800/d' /etc/storage/dnsmasq/dnsmasq.conf
+			cat >> "/etc/storage/dnsmasq/dnsmasq.conf" <<-EOF
+no-resolv
+server=127.0.0.1#$chinadns_port
+dns-forward-max=1000
+min-cache-ttl=1800
+EOF
+			restart_dhcpd
 		fi
 	fi
 fi
@@ -110,7 +122,7 @@ cat >> "/tmp/script/_opt_script_check" <<-OSC
 OSC
 #return
 fi
-
+sleep 60
 chinadns_enable=`nvram get app_1` #chinadns_enable
 while [ "$chinadns_enable" = "1" ]; do
 	NUM=`ps -w | grep "$chinadns_path" | grep -v grep |wc -l`
@@ -121,7 +133,15 @@ while [ "$chinadns_enable" = "1" ]; do
 	port=$(grep "server=127.0.0.1#$chinadns_port"  /etc/storage/dnsmasq/dnsmasq.conf | wc -l)
 	if [ "$port" = 0 ] ; then
 		logger -t "【chinadns】" "检测:找不到 dnsmasq 转发规则, 重新添加"
-		chinadns_restart
+		# 写入dnsmasq配置
+		sed -Ei '/no-resolv|server=|server=127.0.0.1|dns-forward-max=1000|min-cache-ttl=1800/d' /etc/storage/dnsmasq/dnsmasq.conf
+		cat >> "/etc/storage/dnsmasq/dnsmasq.conf" <<-EOF
+no-resolv
+server=127.0.0.1#$chinadns_port
+dns-forward-max=1000
+min-cache-ttl=1800
+EOF
+		restart_dhcpd
 	fi
 sleep 69
 chinadns_enable=`nvram get app_1` #chinadns_enable
@@ -135,9 +155,9 @@ restart_dhcpd
 [ ! -z "$chinadns_path" ] && eval $(ps -w | grep "$chinadns_path" | grep -v grep | awk '{print "kill "$1";";}')
 killall chinadns
 killall -9 chinadns
-eval $(ps -w | grep "_chinadns keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_chinadns.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_app1"
+kill_ps "_chinadns.sh"
+kill_ps "$scriptname"
 }
 
 chinadns_start () {
@@ -145,7 +165,8 @@ SVC_PATH="$chinadns_path"
 if [ ! -s "$SVC_PATH" ] ; then
 	SVC_PATH="/opt/bin/chinadns"
 fi
-hash chinadns 2>/dev/null || rm -rf /opt/bin/chinadns
+chmod 777 "$SVC_PATH"
+[[ "$(chinadns -h | wc -l)" -lt 2 ]] && rm -rf /opt/bin/chinadns
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【chinadns】" "找不到 $SVC_PATH，安装 opt 程序"
 	/tmp/script/_mountopt optwget
@@ -167,7 +188,7 @@ fi
 chinadns_path="$SVC_PATH"
 
 if [ ! -f "/opt/opti.txt" ] ; then
-	logger -t "【opt】" "安装 opt 环境）"
+	logger -t "【opt】" "安装 opt 环境"
 	/tmp/script/_mountopt optwget
 fi
 # 配置参数
@@ -180,10 +201,12 @@ usage=$usage" -d "
 fi
 [ ! -f /etc/storage/china_ip_list.txt ] && tar -xzvf /etc_ro/china_ip_list.tgz -C /tmp && ln -sf /tmp/china_ip_list.txt /etc/storage/china_ip_list.txt
 update_app
-
+chmod 755 "/opt/bin/chinadns"
 chinadns_v=`chinadns -V | grep ChinaDNS`
 nvram set chinadns_v="$chinadns_v"
 
+killall dnsproxy && killall -9 dnsproxy 2>/dev/null
+killall pdnsd && killall -9 pdnsd 2>/dev/null
 logger -t "【chinadns】" "运行 $SVC_PATH"
 $chinadns_path -p $chinadns_port -s $chinadns_dnss -l /opt/app/chinadns/chinadns_iplist.txt -c /etc/storage/china_ip_list.txt $usage &
 sleep 2
@@ -210,8 +233,8 @@ eval "$scriptfilepath keep &"
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
 fi
 
 }
@@ -249,10 +272,13 @@ keep)
 	#chinadns_check
 	chinadns_keep
 	;;
-updatechinadns)
+updateapp1)
 	chinadns_restart o
 	[ "$chinadns_enable" = "1" ] && nvram set chinadns_status="updatechinadns" && logger -t "【chinadns】" "重启" && chinadns_restart
-	[ "$chinadns_enable" != "1" ] && [ -f "$chinadns_path" ] && nvram set chinadns_v="" && logger -t "【chinadns】" "更新" && update_app del
+	[ "$chinadns_enable" != "1" ] && nvram set chinadns_v="" && logger -t "【chinadns】" "更新" && update_app del
+	;;
+update_app)
+	update_app
 	;;
 *)
 	chinadns_check

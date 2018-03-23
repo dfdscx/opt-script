@@ -4,7 +4,21 @@ source /etc/storage/script/init.sh
 wifidog_enable=`nvram get wifidog_enable`
 [ -z $wifidog_enable ] && wifidog_enable=0 && nvram set wifidog_enable=0
 if [ "$wifidog_enable" != "0" ] ; then
-nvramshow=`nvram showall | grep '=' | grep wifidog | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep wifidog | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
+wifidog_Daemon=`nvram get wifidog_Daemon`
+wifidog_Hostname=`nvram get wifidog_Hostname`
+wifidog_HTTPPort=`nvram get wifidog_HTTPPort`
+wifidog_Path=`nvram get wifidog_Path`
+wifidog_id=`nvram get wifidog_id`
+wifidog_lanif=`nvram get wifidog_lanif`
+wifidog_wanif=`nvram get wifidog_wanif`
+wifidog_Port=`nvram get wifidog_Port`
+wifidog_Interval=`nvram get wifidog_Interval`
+wifidog_Timeout=`nvram get wifidog_Timeout`
+wifidog_MaxConn=`nvram get wifidog_MaxConn`
+wifidog_MACList=`nvram get wifidog_MACList`
+
 fi
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep wifi_dog)" ]  && [ ! -s /tmp/script/_wifi_dog ]; then
@@ -91,7 +105,7 @@ wifidog_check () {
 wifidog_get_status
 if [ "$wifidog_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "`pidof wifidog`" ] && logger -t "【wifidog】" "停止 wifidog" && wifidog_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$wifidog_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -139,9 +153,9 @@ fi
 $WD_DIR/wdctl stop
 killall wifidog wdctl
 killall -9 wifidog wdctl
-eval $(ps -w | grep "_wifi_dog keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_wifi_dog.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_wifi_dog"
+kill_ps "_wifi_dog.sh"
+kill_ps "$scriptname"
 }
 
 wifidog_start () {
@@ -152,7 +166,9 @@ fi
 if [ ! -s "$SVC_PATH" ] ; then
 	SVC_PATH="/opt/bin/wifidog"
 fi
-hash wifidog 2>/dev/null || rm -rf /opt/bin/wifidog
+chmod 777 "$SVC_PATH"
+chmod 777 /opt/bin/wdctl
+[[ "$(wifidog -h 2>&1 | wc -l)" -lt 2 ]] && rm -rf /opt/bin/wifidog
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【wifidog】" "找不到 $SVC_PATH ，安装 opt 程序"
 	/tmp/script/_mountopt start
@@ -246,6 +262,7 @@ FirewallRuleSet locked-users {
 	FirewallRule block to 0.0.0.0/0
 FWD
 
+chmod 777 "$SVC_PATH"
 $SVC_PATH -c /etc/storage/wifidog.conf &
 
 sleep 2
@@ -277,8 +294,8 @@ stop()
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
 fi
 
 }

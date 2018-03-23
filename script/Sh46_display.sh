@@ -4,7 +4,10 @@ source /etc/storage/script/init.sh
 display_enable=`nvram get display_enable`
 [ -z $display_enable ] && display_enable=0 && nvram set display_enable=0
 if [ "$display_enable" != "0" ] ; then
-nvramshow=`nvram showall | grep '=' | grep display | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep display | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
+display_weather=`nvram get display_weather`
+display_aqidata=`nvram get display_aqidata`
 
 if [ -z "$display_weather" ] ; then 
 display_weather="2151330"
@@ -78,7 +81,7 @@ display_check () {
 display_get_status
 if [ "$display_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "`pidof lcd4linux`" ] && logger -t "【相框显示】" "停止 lcd4linux" && display_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$display_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -133,18 +136,30 @@ display_close () {
 sed -Ei '/【相框显示】|^$/d' /tmp/script/_opt_script_check
 killall lcd4linux getaqidata getweather displaykeep.sh
 killall -9 lcd4linux getaqidata getweather displaykeep.sh
-eval $(ps -w | grep "_display keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_display.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_display"
+kill_ps "_display.sh"
+kill_ps "$scriptname"
 }
 
 display_start () {
 ss_opt_x=`nvram get ss_opt_x`
 upanPath=""
-[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
+[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+if [ "$ss_opt_x" = "5" ] ; then
+	# 指定目录
+	opt_cifs_dir=`nvram get opt_cifs_dir`
+	if [ -d $opt_cifs_dir ] ; then
+		upanPath="$opt_cifs_dir"
+	else
+		logger -t "【opt】" "错误！未找到指定目录 $opt_cifs_dir"
+		upanPath=""
+		[ -z "$upanPath" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+		[ -z "$upanPath" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	fi
+fi
 echo "$upanPath"
 if [ -z "$upanPath" ] ; then 
 	logger -t "【相框显示】" "未挂载储存设备, 请重新检查配置、目录，10 秒后自动尝试重新启动"
@@ -155,7 +170,8 @@ fi
 
 cp -f /etc/storage/display_lcd4linux_script.sh /tmp/lcd4linux.conf
 SVC_PATH=/opt/bin/lcd4linux
-hash lcd4linux 2>/dev/null || rm -rf /opt/bin/lcd4linux /opt/opti.txt
+chmod 777 "$SVC_PATH"
+[[ "$(lcd4linux -h 2>&1 | wc -l)" -lt 2 ]] && rm -rf /opt/bin/lcd4linux /opt/opti.txt
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【相框显示】" "找不到 $SVC_PATH，安装 opt 程序"
 	/tmp/script/_mountopt optwget
@@ -179,10 +195,22 @@ fi
 # 修改显示空间
 ss_opt_x=`nvram get ss_opt_x`
 upanPath=""
-[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
+[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+if [ "$ss_opt_x" = "5" ] ; then
+	# 指定目录
+	opt_cifs_dir=`nvram get opt_cifs_dir`
+	if [ -d $opt_cifs_dir ] ; then
+		upanPath="$opt_cifs_dir"
+	else
+		logger -t "【opt】" "错误！未找到指定目录 $opt_cifs_dir"
+		upanPath=""
+		[ -z "$upanPath" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+		[ -z "$upanPath" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	fi
+fi
 if [ ! -z "$upanPath" ] ; then
 	upanPath2="SpaceDir  \'\/media\/$upanPath\' #显示空间"
 else
@@ -274,7 +302,7 @@ getaqidata () {
 #获取AQI数据和数据绘图。http://www.aqicn.org
 rm -f /tmp/aqicn
 aqicnorg="http://feed.aqicn.org/feed/$display_aqidata/en/feed.v1.json"
-#wget -c -O /tmp/aqicn "http://feed.aqicn.org/feed/$display_aqidata/en/feed.v1.json" --continue --no-check-certificate
+#wget -c -O /tmp/aqicn "http://feed.aqicn.org/feed/$display_aqidata/en/feed.v1.json" --no-check-certificate
 wgetcurl.sh /tmp/aqicn "$aqicnorg" "$aqicnorg" N
 if [ ! -s /tmp/aqicn ]; then
 	logger -t "【相框显示】" "获取AQI数据错误！请检查链接："
@@ -478,8 +506,8 @@ optw_enable=`nvram get optw_enable`
 if [ "$optw_enable" != "2" ] ; then
 	nvram set optw_enable=2
 fi
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
 fi
 
 }

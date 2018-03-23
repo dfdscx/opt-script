@@ -3,27 +3,74 @@
 # 一级菜单显示标题：空格隔开
 menu0_title="配置扩展环境  ShadowSocks 花生壳内网版 广告屏蔽功能 搭建Web环境"
 # 菜单页面排序：空格隔开
-menu_title1="配置扩展环境 锐捷认证 Wifidog 微信推送  网页终端   相框设置"
+menu_title1="配置扩展环境 锐捷认证 Wifidog 微信推送  网页终端   相框设置 goflyway virtualhere"
 menu_title2="SS配置       SS节点   Kcptun  SS_Server SSR_Server COW       MEOW SoftEtherVPN"
 menu_title3="花生壳内网版 Ngrok    frp     DNSPod    CloudXNS   Aliddns"
 menu_title4="Adbyby       ADM      koolproxy"
-menu_title5="搭建Web环境  v2ray chinadns"
+menu_title5="搭建Web环境  v2ray  chinadns 假装在中国 upd2pro 家庭云提速 filemanager verysync"
 ################################
 menu_title_all="$menu_title1 $menu_title2 $menu_title3 $menu_title4 $menu_title5"
 source /etc/storage/script/init.sh
 
 if [ ! -s /tmp/script/_menu_title ] && [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep menu_title)" ] ; then
     mkdir -p /tmp/script
-    cp -Hsf $scriptfilepath /tmp/script/_menu_title
-    chmod 777 /tmp/script/_menu_title
+    { echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /tmp/script/_menu_title
     ln -sf /etc/storage/www_sh/menu_title.sh /etc/storage/menu_title_script.sh
 fi
+
+chmod 777 /tmp/script/_menu_title
+chmod 777 /etc/storage/www_sh -R
 
 title_init()
 {
 
 # 清空数据
-nvramshow=`nvram showall | grep '=' | grep menu | grep title | awk '{print "nvram set "$1";";}' | awk '{print gensub(/=.*/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep menu | grep title | awk '{print "nvram set "$1";";}' | awk '{print gensub(/=.*/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+nvram set menu0_title1=""
+nvram set menu0_title2=""
+nvram set menu0_title3=""
+nvram set menu0_title4=""
+nvram set menu0_title5=""
+nvram set menu1_title1=""
+nvram set menu2_title1=""
+nvram set menu3_title1=""
+nvram set menu4_title1=""
+nvram set menu5_title1=""
+nvram set menu6_title1=""
+nvram set menu7_title1=""
+nvram set menu8_title1=""
+nvram set menu1_title2=""
+nvram set menu2_title2=""
+nvram set menu3_title2=""
+nvram set menu4_title2=""
+nvram set menu5_title2=""
+nvram set menu6_title2=""
+nvram set menu7_title2=""
+nvram set menu8_title2=""
+nvram set menu1_title3=""
+nvram set menu2_title3=""
+nvram set menu3_title3=""
+nvram set menu4_title3=""
+nvram set menu5_title3=""
+nvram set menu6_title3=""
+nvram set menu7_title3=""
+nvram set menu8_title3=""
+nvram set menu1_title4=""
+nvram set menu2_title4=""
+nvram set menu3_title4=""
+nvram set menu4_title4=""
+nvram set menu5_title4=""
+nvram set menu6_title4=""
+nvram set menu7_title4=""
+nvram set menu8_title4=""
+nvram set menu1_title5=""
+nvram set menu2_title5=""
+nvram set menu3_title5=""
+nvram set menu4_title5=""
+nvram set menu5_title5=""
+nvram set menu6_title5=""
+nvram set menu7_title5=""
+nvram set menu8_title5=""
 
 # 写入数据
 i=1
@@ -41,7 +88,7 @@ do
     for title in $menu_title
     do
         #echo 'menu'$i'_title'$ii'='$title
-        eval 'nvram set menu'$i'_title'$ii'='$title';'
+        [ ! -z "$title" ] && eval 'nvram set menu'$i'_title'$ii'='$title';'
         i=$((i+1))
     done
 done
@@ -64,7 +111,7 @@ do
         if [ ! -z "$nvramrun" ] && [ ! -z "$(echo "$menu_title_all" | grep "$nvramrun")" ] && [ -s "/etc/storage/www_sh/$nvramrun" ] ; then
         #dos2unix "./$nvramrun"
         eval $(ps -w | grep "/etc/storage/www_sh/$nvramrun" | grep -v grep | awk '{print "kill "$1";";}')
-        /etc/storage/www_sh/$nvramrun "$i$ii" "$i" "$ii"
+        eval /etc/storage/www_sh/$nvramrun "$i$ii" "$i" "$ii"
         #echo "/etc/storage/www_sh/$nvramrun $i$ii $i $ii"
         fi
     done
@@ -126,6 +173,9 @@ if [ ! -z "$c_line" ] && [ ! -z "$file_name" ] ; then
     fi
 fi
 done < /tmp/www_shsh.txt
+
+chmod 777 /etc/storage/www_sh -R
+
 }
 
 
@@ -157,7 +207,7 @@ check)
     check_www_sh
     ;;
 upver)
-    www_upver
+    www_upver &
     ;;
 upre)
     www_upwww_sh

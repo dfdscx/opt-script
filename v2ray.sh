@@ -1,6 +1,10 @@
 #!/bin/bash
 export PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-version=v2.33.1
+version=v3.14
+
+[ ! -z "$( alias | grep 'alias cp=')" ] &&  unalias cp
+[ ! -z "$( alias | grep 'alias mv=')" ] &&  unalias mv
+[ ! -z "$( alias | grep 'alias rm=')" ] &&  unalias rm
 
 SYSTEMCTL_CMD=$(command -v systemctl)
 SERVICE_CMD=$(command -v service)
@@ -33,6 +37,7 @@ uuid=$(cat /proc/sys/kernel/random/uuid)
 
 function Install(){
 #Install Basic Packages
+echo '安装基本软件包，请稍候！'
 if [[ ${OS} == 'CentOS' ]];then
 	yum install curl wget unzip ntp ntpdate -y
 else
@@ -59,12 +64,35 @@ fi
 #Run Install
 cd /root
 
-curl -L -s -k https://install.direct/go.sh > /root/go.sh 
+curl -L  -k http://opt.cn2qq.com/opt-script/go.sh > /root/go.sh 
+if [ ! -s /root/go.sh ]; then
+  rm -f /root/go.sh
+  wget --no-check-certificate http://opt.cn2qq.com/opt-script/go.sh
+fi
 chmod +x "/root/go.sh"
 echo "V2Ray 安装 $version"
 /root/go.sh --version $version
 check_daemon
+rm -f /root/v2ray_server_json
+ln -sf /etc/v2ray /root/v2ray_server_json
 echo "安装完成"
+
+}
+
+function remove_v2ray(){
+echo '删除 V2ray 请稍候！'
+
+cd /root
+
+curl -L  -k http://opt.cn2qq.com/opt-script/go.sh > /root/go.sh 
+if [ ! -s /root/go.sh ]; then
+  rm -f /root/go.sh
+  wget --no-check-certificate http://opt.cn2qq.com/opt-script/go.sh
+fi
+chmod +x "/root/go.sh"
+/root/go.sh --remove
+
+echo '删除 V2ray 完成！'
 
 }
 
@@ -82,14 +110,18 @@ function up_v2ray(){
     fi
   fi
 
-curl -L -s -k https://install.direct/go.sh > /root/go.sh 
+curl -L -s -k http://opt.cn2qq.com/opt-script/go.sh > /root/go.sh 
+if [ ! -s /root/go.sh ]; then
+  rm -f /root/go.sh
+  wget --no-check-certificate http://opt.cn2qq.com/opt-script/go.sh
+fi
 chmod +x "/root/go.sh"
 echo "V2Ray 安装 $version"
 /root/go.sh --version $version
 check_daemon
 echo "安装完成"
+ntpdate us.pool.ntp.org &
 if [ -f "/etc/v2ray/config.back0" ]; then
-cp -f /etc/v2ray/config.back0 /etc/v2ray/config.json
   if [ -n "${SYSTEMCTL_CMD}" ]; then
     if [ -f "/lib/systemd/system/v2ray.service" ]; then
       echo "Restarting V2Ray service."
@@ -101,6 +133,7 @@ cp -f /etc/v2ray/config.back0 /etc/v2ray/config.json
       ${SERVICE_CMD} v2ray start
     fi
   fi
+cp -f /etc/v2ray/config.back0 /etc/v2ray/config.json
 exit
 else
   echo "未完成配置生成，请继续配置"
@@ -108,9 +141,10 @@ fi
 }
 
 function check_daemon(){
-
-hash start-stop-daemon 2>/dev/null || echo daemon_x=1
-if [ -f "/etc/init.d/v2ray" ] || [ "$daemon_x" = "1" ] ; then
+hash start-stop-daemon 2>/dev/null || daemon_x=1
+echo $daemon_x
+if [ ! -f "/etc/init.d/v2ray" ] || [ "$daemon_x" = "1" ] ; then
+rm -f /root/keey.sh /etc/init.d/v2ray
 cat > "/etc/init.d/v2ray" <<-\VVRinit
 #!/bin/sh
 ### BEGIN INIT INFO
@@ -154,6 +188,8 @@ do_start(){
         keep
         exit 0
     else
+        cd /usr/bin/v2ray/
+        ntpdate us.pool.ntp.org &
         $DAEMON $DAEMON_OPTS &
         RETVAL=$?
         if [ $RETVAL -eq 0 ]; then
@@ -198,6 +234,7 @@ do_restart(){
 }
 
 keep () {
+if [ ! -f "/root/keey.sh" ]; then
 cat > "/root/keey.sh" <<-\SSMK
 #!/bin/sh
 #/usr/bin/v2ray/v2ray
@@ -205,6 +242,7 @@ sleep 60
 service v2ray start
 SSMK
 chmod +x "/root/keey.sh"
+fi
 killall keey.sh
 /root/keey.sh &
 
@@ -236,8 +274,12 @@ fi
 
 echo 'V2Ray 输入数字继续一键安装'
 while :; do echo
-	read -p "输入数字继续（【安装并生成配置】请输入1，【更新并重启主程序】请输入0）:" up_vv
+	read -p "输入数字继续（【新安装或重新生成配置】请输入1，【更新V2Ray】请输入0，【删除V2Ray】请输入3）:" up_vv
 	if [[ ! $up_vv =~ ^[0-1]$ ]]; then
+		if [[ $up_vv == 3 ]]; then
+			remove_v2ray
+			exit
+		fi
 		echo "${CWARNING}输入错误! 请输入正确的数字!${CEND}"
 	else
 		break
@@ -272,7 +314,7 @@ read -p "输入主要端口（默认：$mainport_x ）:" mainport
 
 echo ''
 
-read -p "是否启用HTTP伪装?（默认开启） [y/n]:" ifhttpheader
+read -p "是否启用HTTP伪装?（默认开启y） [y/n]:" ifhttpheader
 	[ -z "$ifhttpheader" ] && ifhttpheader='y'
 	if [[ $ifhttpheader == 'y' ]];then
 		httpheader=',
@@ -287,7 +329,7 @@ read -p "是否启用HTTP伪装?（默认开启） [y/n]:" ifhttpheader
             "method": "GET",
             "path": ["/"],
             "headers": {
-              "Host": ["www.163.com", "www.sogou.com/"],
+              "Host": ["www.163.com", "www.sogou.com"],
               "User-Agent": [
                 "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.75 Safari/537.36",
                         "Mozilla/5.0 (iPhone; CPU iPhone OS 10_0_2 like Mac OS X) AppleWebKit/601.1 (KHTML, like Gecko) CriOS/53.0.2785.109 Mobile/14A456 Safari/601.1.46"
@@ -313,7 +355,7 @@ read -p "是否启用HTTP伪装?（默认开启） [y/n]:" ifhttpheader
     }'
 	else
 		httpheader=''
-		read -p "是否启用mKCP协议?（默认开启） [y/n]:" ifmkcp
+		read -p "是否启用mKCP协议?（默认开启y） [y/n]:" ifmkcp
 		[ -z "$ifmkcp" ] && ifmkcp='y'
 		if [[ $ifmkcp == 'y' ]];then
         		mkcp=',
@@ -327,7 +369,7 @@ fi
 
 echo ''
 
-read -p "是否启用动态端口?（默认开启） [y/n]:" ifdynamicport
+read -p "是否启用动态端口?（默认开启y） [y/n]:" ifdynamicport
   [ -z "$ifdynamicport" ] && ifdynamicport='y'
   if [[ $ifdynamicport == 'y' ]];then
 subport1_x=$(($mainport_x + 1))
@@ -372,7 +414,7 @@ porttime_x=`echo $SEED 4 7|awk '{srand($1);printf "%d",rand()*10000%($3-$2)+$2}'
 
 echo ''
 
-read -p "是否启用 Mux.Cool?（默认开启） [y/n]:" ifmux
+read -p "是否启用 Mux.Cool?（默认开启y） [y/n]:" ifmux
   [ -z "$ifmux" ] && ifmux='y'
   if [[ $ifmux == 'y' ]];then
     mux=',
@@ -385,7 +427,7 @@ read -p "是否启用 Mux.Cool?（默认开启） [y/n]:" ifmux
   fi
 
 while :; do echo
-  echo '1. HTTP代理（默认）'
+  echo '1. HTTP代理（默认1）'
   echo '2. Socks代理'
   read -p "请选择客户端代理类型: " chooseproxytype
   [ -z "$chooseproxytype" ] && chooseproxytype=1
@@ -416,7 +458,7 @@ if [ ! -f "/usr/bin/v2ray/v2ray" ]; then
 fi
 
 
-read -p "是否关闭iptables防火墙?（默认关闭） [y/n]:" ifoffiptables
+read -p "是否关闭iptables防火墙?（默认关闭y） [y/n]:" ifoffiptables
 [ -z "$ifoffiptables" ] && ifoffiptables='y'
 if [[ $ifoffiptables == 'y' ]];then
 	#Disable iptables
@@ -558,17 +600,12 @@ cat << EOF > /root/config.json
     {
       "port": "$ip_door",
       "listen": "0.0.0.0",
-      "allocate": {
-      "strategy": "always",
-      "refresh": 5,
-      "concurrency": 3
-    },
-    "protocol": "dokodemo-door",
-    "settings": {
-      "network": "tcp,udp",
-      "timeout": 30,
-      "followRedirect": true
-    }
+      "protocol": "dokodemo-door",
+      "settings": {
+        "network": "tcp,udp",
+        "timeout": 30,
+        "followRedirect": true
+      }
     }
   ],
   "outbound": {
@@ -646,6 +683,7 @@ cat << EOF > /root/config.json
 EOF
 
 
+ntpdate us.pool.ntp.org &
   if [ -n "${SYSTEMCTL_CMD}" ]; then
     if [ -f "/lib/systemd/system/v2ray.service" ]; then
       echo "Restarting V2Ray service."

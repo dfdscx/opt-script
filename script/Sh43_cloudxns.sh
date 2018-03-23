@@ -4,7 +4,16 @@ source /etc/storage/script/init.sh
 cloudxns_enable=`nvram get cloudxns_enable`
 [ -z $cloudxns_enable ] && cloudxns_enable=0 && nvram set cloudxns_enable=0
 if [ "$cloudxns_enable" != "0" ] ; then
-nvramshow=`nvram showall | grep '=' | grep cloudxns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep cloudxns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
+cloudxns_username=`nvram get cloudxns_username`
+cloudxns_password=`nvram get cloudxns_password`
+cloudxns_domian=`nvram get cloudxns_domian`
+cloudxns_host=`nvram get cloudxns_host`
+cloudxns_domian2=`nvram get cloudxns_domian2`
+cloudxns_host2=`nvram get cloudxns_host2`
+cloudxns_interval=`nvram get cloudxns_interval`
+
 hostIP=""
 IP=""
 API_KEY="$cloudxns_username"
@@ -74,7 +83,7 @@ cloudxns_check () {
 cloudxns_get_status
 if [ "$cloudxns_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "$(ps -w | grep "$scriptname keep" | grep -v grep )" ] && logger -t "【CloudXNS动态域名】" "停止 cloudxns" && cloudxns_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$cloudxns_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -93,7 +102,8 @@ while true; do
 sleep 43
 sleep $cloudxns_interval
 [ ! -s "`which curl`" ] && cloudxns_restart
-nvramshow=`nvram showall | grep '=' | grep cloudxns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep cloudxns | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+cloudxns_enable=`nvram get cloudxns_enable`
 [ "$cloudxns_enable" = "0" ] && cloudxns_close && exit 0;
 if [ "$cloudxns_enable" = "1" ] ; then
 	cloudxns_start
@@ -103,9 +113,9 @@ done
 
 cloudxns_close () {
 
-eval $(ps -w | grep "_cloudxns keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_cloudxns.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_cloudxns"
+kill_ps "_cloudxns.sh"
+kill_ps "$scriptname"
 }
 
 cloudxns_start () {
@@ -133,30 +143,6 @@ if [ "$cloudxns_domian2"x != "x" ] && [ "$cloudxns_domian2" != "baidu.com" ] ; t
 	arDdnsCheck $cloudxns_domian2 $cloudxns_host2
 fi
 }
-
-if [ ! -s "/etc/storage/ddns_script.sh" ] ; then
-cat > "/etc/storage/ddns_script.sh" <<-\EEE
-# 获得外网地址
-# 自行测试哪个代码能获取正确的IP，删除前面的#可生效
-arIpAddress () {
-curltest=`which curl`
-if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-    wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #wget --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #wget --no-check-certificate --quiet --output-document=- "1212.ip138.com/ic.asp" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #wget --no-check-certificate --quiet --output-document=- "ip.6655.com/ip.aspx" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #wget --no-check-certificate --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+'
-else
-    curl -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #curl -k -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #curl -k -s 1212.ip138.com/ic.asp | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #curl -k -s ip.6655.com/ip.aspx | grep -E -o '([0-9]+\.){3}[0-9]+'
-    #curl -k -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+'
-fi
-}
-arIpAddress=$(arIpAddress)
-EEE
-fi
 
 arDdnsInfo() {
 	# 获得域名ID
@@ -194,14 +180,14 @@ arDdnsInfo() {
 arNslookup() {
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		Address=`wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`
+		Address="`wget --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`"
 		if [ $? -eq 0 ]; then
-		echo $Address |  sed s/\;/"\n"/g | sed -n '1p'
+		echo "$Address" |  sed s/\;/"\n"/g | sed -n '1p' | grep -E -o '([0-9]+\.){3}[0-9]+'
 		fi
 	else
-		Address=`curl -k http://119.29.29.29/d?dn=$1`
+		Address="`curl -k http://119.29.29.29/d?dn=$1`"
 		if [ $? -eq 0 ]; then
-		echo $Address |  sed s/\;/"\n"/g | sed -n '1p'
+		echo "$Address" |  sed s/\;/"\n"/g | sed -n '1p' | grep -E -o '([0-9]+\.){3}[0-9]+'
 		fi
 	fi
 }
@@ -272,15 +258,15 @@ arDdnsCheck() {
 	local lastIP
 	source /etc/storage/ddns_script.sh
 	hostIP=$arIpAddress
-	if [ "$hostIP"x ="x"  ] ; then
+	if [ "$hostIP"x = "x"  ] ; then
 		curltest=`which curl`
 		if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
 			hostIP=`wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
 		else
-			hostIP=`curl -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
+			hostIP=`curl -L -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'`
 		fi
-		if [ "$hostIP"x ="x"  ] ; then
-			logger -t "【DNSPod动态域名】" "错误！获取目前 IP 失败，请在脚本更换其他获取地址"
+		if [ "$hostIP"x = "x"  ] ; then
+			logger -t "【CloudXNS动态域名】" "错误！获取目前 IP 失败，请在脚本更换其他获取地址"
 			return 1
 		fi
 	fi
@@ -315,11 +301,40 @@ arDdnsCheck() {
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
 fi
 
 }
+
+initconfig () {
+
+if [ ! -s "/etc/storage/ddns_script.sh" ] ; then
+cat > "/etc/storage/ddns_script.sh" <<-\EEE
+# 获得外网地址
+# 自行测试哪个代码能获取正确的IP，删除前面的#可生效
+arIpAddress () {
+curltest=`which curl`
+if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
+    wget --no-check-certificate --quiet --output-document=- "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "ip.6655.com/ip.aspx" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #wget --no-check-certificate --quiet --output-document=- "ip.3322.net" | grep -E -o '([0-9]+\.){3}[0-9]+'
+else
+    curl -L -k -s "http://www.ipip.net" | grep "您当前的IP：" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s "http://members.3322.org/dyndns/getip" | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s ip.6655.com/ip.aspx | grep -E -o '([0-9]+\.){3}[0-9]+'
+    #curl -k -s ip.3322.net | grep -E -o '([0-9]+\.){3}[0-9]+'
+fi
+}
+arIpAddress=$(arIpAddress)
+EEE
+	chmod 755 "$ddns_script"
+fi
+
+}
+
+initconfig
 
 case $ACTION in
 start)

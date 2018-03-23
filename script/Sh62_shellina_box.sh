@@ -5,8 +5,11 @@ shellinabox_port=`nvram get shellinabox_port`
 shellinabox_enable=`nvram get shellinabox_enable`
 [ -z $shellinabox_enable ] && shellinabox_enable=0 && nvram set shellinabox_enable=$shellinabox_enable
 if [ "$shellinabox_enable" != "0" ] ; then
-nvramshow=`nvram showall | grep '=' | grep shellinabox | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep shellinabox | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
 
+shellinabox_css=`nvram get shellinabox_css`
+shellinabox_wan=`nvram get shellinabox_wan`
+shellinabox_options_ttyd=`nvram get shellinabox_options_ttyd`
 
 [ -z $shellinabox_port ] && shellinabox_port="4200" && nvram set shellinabox_port=$shellinabox_port
 [ -z $shellinabox_css ] && shellinabox_css="white-on-black" && nvram set shellinabox_css=$shellinabox_css
@@ -77,7 +80,7 @@ shellinabox_get_status
 if [ "$shellinabox_enable" = "0" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "`pidof shellinaboxd`" ] && logger -t "$shell_log" "停止 shellinaboxd" && shellinabox_close
 	[ ! -z "`pidof ttyd`" ] && logger -t "【ttyd】" "停止 ttyd" && shellinabox_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$shellinabox_enable" = "1" ] || [ "$shellinabox_enable" = "2" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -86,13 +89,7 @@ if [ "$shellinabox_enable" = "1" ] || [ "$shellinabox_enable" = "2" ] ; then
 	else
 		[ "$shellinabox_enable" = "1" ] && [ -z "`pidof shellinaboxd`" ] && shellinabox_restart
 		[ "$shellinabox_enable" = "2" ] && [ -z "`pidof ttyd`" ] && shellinabox_restart
-		if [ "$shellinabox_wan" = "1" ] ; then
-		port=$(iptables -t filter -L INPUT -v -n --line-numbers | grep dpt:$shellinabox_port | cut -d " " -f 1 | sort -nr | wc -l)
-		if [ "$port" = 0 ] ; then
-			logger -t "$shell_log" "检测:找不到 ss-server 端口:$shellinabox_port 规则, 重新添加"
-			iptables -t filter -I INPUT -p tcp --dport $shellinabox_port -j ACCEPT
-		fi
-		fi
+		shellinabox_port_dpt
 	fi
 fi
 }
@@ -138,12 +135,12 @@ shellinabox_close () {
 
 sed -Ei '/【shellinabox】|^$/d' /tmp/script/_opt_script_check
 sed -Ei '/【ttyd】|^$/d' /tmp/script/_opt_script_check
-iptables -D INPUT -p tcp --dport $shellinabox_port -j ACCEPT
+iptables -t filter -D INPUT -p tcp --dport $shellinabox_port -j ACCEPT
 killall shellinaboxd ttyd
 killall -9 shellinaboxd ttyd
-eval $(ps -w | grep "_shellina_box keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_shellina_box.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_shellina_box"
+kill_ps "_shellina_box.sh"
+kill_ps "$scriptname"
 }
 
 shellinabox_start () {
@@ -157,7 +154,8 @@ sleep 5
 fi
 if [ "$shellinabox_enable" = "1" ] ; then
 SVC_PATH="/opt/sbin/shellinaboxd"
-hash shellinaboxd 2>/dev/null || rm -rf /opt/bin/shellinaboxd /opt/opti.txt
+chmod 777 "$SVC_PATH"
+[[ "$(shellinaboxd -h 2>&1 | wc -l)" -lt 2 ]] && rm -rf /opt/bin/shellinaboxd /opt/opti.txt
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "$shell_log" "找不到 $SVC_PATH，安装 opt 程序"
 	/tmp/script/_mountopt optwget
@@ -173,7 +171,7 @@ sleep 5
 [ -z "`pidof shellinaboxd`" ] && logger -t "$shell_log" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && shellinabox_restart x
 initopt
 fi
-[ "$shellinabox_wan" = "1" ] && iptables -I INPUT -p tcp --dport $shellinabox_port -j ACCEPT
+shellinabox_port_dpt
 #shellinabox_get_status
 eval "$scriptfilepath keep &"
 }
@@ -185,8 +183,20 @@ optw_enable=`nvram get optw_enable`
 if [ "$optw_enable" != "2" ] && [ "$shellinabox_wan" = "1" ] ; then
 	nvram set optw_enable=2
 fi
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
+fi
+
+}
+
+shellinabox_port_dpt () {
+
+if [ "$shellinabox_wan" = "1" ] ; then
+	port=$(iptables -t filter -L INPUT -v -n --line-numbers | grep dpt:$shellinabox_port | cut -d " " -f 1 | sort -nr | wc -l)
+	if [ "$port" = 0 ] ; then
+		logger -t "$shell_log" "检测:找不到 ss-server 端口:$shellinabox_port 规则, 重新添加"
+		iptables -t filter -I INPUT -p tcp --dport $shellinabox_port -j ACCEPT
+	fi
 fi
 
 }

@@ -4,7 +4,12 @@ source /etc/storage/script/init.sh
 FastDick_enable=`nvram get FastDick_enable`
 [ -z $FastDick_enable ] && FastDick_enable=0 && nvram set FastDick_enable=0
 if [ "$FastDick_enable" != "0" ] ; then
-nvramshow=`nvram showall | grep '=' | grep FastDick | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep FastDick | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
+FastDick_uid=`nvram get FastDick_uid`
+FastDick_pwd=`nvram get FastDick_pwd`
+FastDicks=`nvram get FastDicks`
+
 fi
 
 if [ ! -z "$(echo $scriptfilepath | grep -v "/tmp/script/" | grep Fast_Dick)" ]  && [ ! -s /tmp/script/_Fast_Dick ]; then
@@ -68,7 +73,7 @@ FastDick_get_status
 if [ "$FastDick_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	running=$(ps -w | grep "FastDick" | grep -v "grep" | wc -l)
 	[ $running -gt 1 ] && logger -t "【迅雷快鸟】" "停止 迅雷快鸟$running" && FastDick_clos
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$FastDick_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -97,10 +102,10 @@ done
 FastDick_close () {
 killall FastDick_script.sh
 killall -9 FastDick_script.sh
-eval $(ps -w | grep "/opt/FastDick/swjsq" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_Fast_Dick keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_Fast_Dick.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/opt/FastDick/swjsq"
+kill_ps "/tmp/script/_Fast_Dick"
+kill_ps "_Fast_Dick.sh"
+kill_ps "$scriptname"
 }
 
 
@@ -114,10 +119,22 @@ if [ "$FastDicks" = "2" ] ; then
 else
 	ss_opt_x=`nvram get ss_opt_x`
 	upanPath=""
-	[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-	[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-	[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
-	[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | awk 'NR==1' `"
+	[ "$ss_opt_x" = "3" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	[ "$ss_opt_x" = "4" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	[ -z "$upanPath" ] && [ "$ss_opt_x" = "1" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+	if [ "$ss_opt_x" = "5" ] ; then
+		# 指定目录
+		opt_cifs_dir=`nvram get opt_cifs_dir`
+		if [ -d $opt_cifs_dir ] ; then
+			upanPath="$opt_cifs_dir"
+		else
+			logger -t "【opt】" "错误！未找到指定目录 $opt_cifs_dir"
+			upanPath=""
+			[ -z "$upanPath" ] && upanPath="`df -m | grep /dev/mmcb | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+			[ -z "$upanPath" ] && upanPath="`df -m | grep "/dev/sd" | grep "/media" | awk '{print $NF}' | sort -u | awk 'NR==1' `"
+		fi
+	fi
 	echo "$upanPath"
 	if [ -z "$upanPath" ] ; then 
 		logger -t "【迅雷快鸟】" "未挂载储存设备, 请重新检查配置、目录，10 秒后自动尝试重新启动"
@@ -127,7 +144,8 @@ else
 	fi
 
 	SVC_PATH=/opt/bin/python
-	hash python 2>/dev/null || rm -rf /opt/bin/python /opt/opti.txt
+	chmod 777 "$SVC_PATH"
+	[[ "$(python -h 2>&1 | wc -l)" -lt 2 ]] && rm -rf /opt/bin/python /opt/opti.txt
 	if [ ! -s "$SVC_PATH" ] ; then
 		logger -t "【迅雷快鸟】" "找不到 $SVC_PATH，安装 opt 程序"
 		/tmp/script/_mountopt optwget
@@ -166,7 +184,8 @@ EEF
 		cat /opt/FastDick/swjsq_wget.sh >> /etc/storage/FastDick_script.sh
 		chmod 777 "/etc/storage/FastDick_script.sh"
 	fi
-	logger -t "【迅雷快鸟】" "启动完成`cat /opt/FastDick/swjsq.log`"
+	logger -t "【迅雷快鸟】" "启动 python 完成"
+	logger -t "【迅雷快鸟】" "`cat /opt/FastDick/swjsq.log`"
 	optw_enable=`nvram get optw_enable`
 	if [ "$optw_enable" != "2" ] ; then
 		nvram set optw_enable=2
@@ -174,12 +193,34 @@ EEF
 fi
 sleep 2
 [ ! -z "$(ps -w | grep "FastDick" | grep -v grep )" ] && logger -t "【迅雷快鸟】" "启动成功" && FastDicks_restart o
-[ -z "$(ps -w | grep "FastDick" | grep -v grep )" ] && logger -t "【迅雷快鸟】" "启动失败, 注意检查端口是否有冲突,程序是否下载完整,10 秒后自动尝试重新启动" && sleep 10 && FastDicks_restart x
-
+if [ "$FastDicks" = "2" ] ; then
+[ -z "$(ps -w | grep "FastDick" | grep -v grep )" ] && logger -t "【迅雷快鸟】" "启动失败, 注意检脚本是否完整,10 秒后自动尝试重新启动" && sleep 10 && FastDicks_restart x
+else
+[ -z "$(ps -w | grep "FastDick" | grep -v grep )" ] && logger -t "【迅雷快鸟】" "启动失败, 注意检查python程序是否下载完整,手动ssh运行【python /opt/FastDick/swjsq.py】看报错日志,10 秒后自动尝试重新启动" && sleep 10 && FastDicks_restart x
+fi
 FastDick_get_status
 eval "$scriptfilepath keep &"
 }
 
+initconfig () {
+
+FastDick_script="/etc/storage/FastDick_script.sh"
+if [ ! -f "$FastDick_script" ] || [ ! -s "$FastDick_script" ] ; then
+	cat > "$FastDick_script" <<-\EEE
+#!/bin/sh
+# 迅雷快鸟【免U盘启动】功能需在此输入swjsq_wget.sh文件内容
+# swjsq_wget.sh文件脚本两种方法：
+# ①插入U盘，配置自定义脚本【插U盘启动】启动快鸟一次即可自动生成
+# ②打开https://github.com/fffonion/Xunlei-FastDick，按照网页的说明在PC上运行脚本，登陆成功后会生成swjsq_wget.sh，把swjsq_wget.sh的内容粘贴此处即可
+# 生成后需要到【系统管理】 - 【恢复/导出/上传设置】 - 【路由器内部存储 (/etc/storage)】【写入】保存脚本
+
+EEE
+	chmod 755 "$FastDick_script"
+fi
+
+}
+
+initconfig
 
 case $ACTION in
 start)

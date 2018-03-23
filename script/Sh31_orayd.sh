@@ -57,7 +57,7 @@ exit 0
 phddns_check () {
 if [ "$phddns" != "1" ] ; then
 	[ ! -z "`pidof oraysl`" ] && logger -t "【花生壳内网版】" "停止 oraysl" && phddns_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$phddns" = "1" ] ; then
 	if [ -z "`pidof oraysl`" ] || [ ! -s "`which oraysl`" ] ; then
@@ -136,9 +136,9 @@ done
 phddns_close () {
 killall oraynewph oraysl
 killall -9 oraynewph oraysl
-eval $(ps -w | grep "_orayd keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_orayd.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_orayd"
+kill_ps "_orayd.sh"
+kill_ps "$scriptname"
 }
 
 phddns_start () {
@@ -149,8 +149,9 @@ if [ ! -s "$SVC_PATH" ] || [ ! -s "$SVC_PATH2" ] ; then
 SVC_PATH="/opt/bin/oraysl"
 SVC_PATH2="/opt/bin/oraynewph"
 fi
-hash oraysl 2>/dev/null || rm -rf /opt/bin/oraysl
-hash oraynewph 2>/dev/null || rm -rf /opt/bin/oraynewph
+chmod 777 "$SVC_PATH"
+chmod 777 "$SVC_PATH2"
+[[ "$(oraysl -h 2>&1 | wc -l)" -lt 2 ]] && rm -rf /opt/bin/oraysl /opt/bin/oraynewph
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【花生壳内网版】" "找不到 $SVC_PATH，安装 opt 程序"
 	/tmp/script/_mountopt start
@@ -185,8 +186,8 @@ eval "$scriptfilepath keep &"
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
 fi
 
 }

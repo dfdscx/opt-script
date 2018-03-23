@@ -6,8 +6,23 @@ kcptun_enable=`nvram get kcptun_enable`
 kcptun_path=`nvram get kcptun_path`
 [ -z $kcptun_path ] && kcptun_path="/opt/bin/client_linux_mips" && nvram set kcptun_path=$kcptun_path
 if [ "$kcptun_enable" != "0" ] ; then
-nvramshow=`nvram showall | grep '=' | grep ss | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
-nvramshow=`nvram showall | grep '=' | grep kcptun | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep ss | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+#nvramshow=`nvram showall | grep '=' | grep kcptun | awk '{print gensub(/'"'"'/,"'"'"'\"'"'"'\"'"'"'","g",$0);}'| awk '{print gensub(/=/,"='\''",1,$0)"'\'';";}'` && eval $nvramshow
+
+kcptun_sport=`nvram get kcptun_sport`
+kcptun_crypt=`nvram get kcptun_crypt`
+kcptun_lport=`nvram get kcptun_lport`
+kcptun_sndwnd=`nvram get kcptun_sndwnd`
+kcptun_rcvwnd=`nvram get kcptun_rcvwnd`
+kcptun_mode=`nvram get kcptun_mode`
+kcptun_mtu=`nvram get kcptun_mtu`
+kcptun_dscp=`nvram get kcptun_dscp`
+kcptun_datashard=`nvram get kcptun_datashard`
+kcptun_parityshard=`nvram get kcptun_parityshard`
+kcptun_autoexpire=`nvram get kcptun_autoexpire`
+kcptun_key=`nvram get kcptun_key`
+kcptun_server=`nvram get kcptun_server`
+kcptun_user=`nvram get kcptun_user`
 
 
 kcptun_s_server=""
@@ -83,7 +98,7 @@ kcptun_check () {
 kcptun_get_status
 if [ "$kcptun_enable" != "1" ] && [ "$needed_restart" = "1" ] ; then
 	[ ! -z "$(ps -w | grep "$kcptun_path" | grep -v grep )" ] && logger -t "【kcptun】" "停止 $kcptun_path" && kcptun_close
-	{ eval $(ps -w | grep "$scriptname" | grep -v grep | awk '{print "kill "$1";";}'); exit 0; }
+	{ kill_ps "$scriptname" exit0; exit 0; }
 fi
 if [ "$kcptun_enable" = "1" ] ; then
 	if [ "$needed_restart" = "1" ] ; then
@@ -124,12 +139,12 @@ done
 kcptun_close () {
 
 sed -Ei '/【kcptun】|^$/d' /tmp/script/_opt_script_check
-[ ! -z "$kcptun_path" ] && eval $(ps -w | grep "$kcptun_path" | grep -v grep | awk '{print "kill "$1";";}')
+[ ! -z "$kcptun_path" ] && kill_ps "$kcptun_path"
 killall client_linux_mips kcptun_script.sh sh_kcpkeep.sh
 killall -9 client_linux_mips kcptun_script.sh sh_kcpkeep.sh
-eval $(ps -w | grep "_kcp_tun keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "_kcp_tun.sh keep" | grep -v grep | awk '{print "kill "$1";";}')
-eval $(ps -w | grep "$scriptname keep" | grep -v grep | awk '{print "kill "$1";";}')
+kill_ps "/tmp/script/_kcp_tun"
+kill_ps "_kcp_tun.sh"
+kill_ps "$scriptname"
 }
 
 kcptun_start () {
@@ -138,7 +153,8 @@ SVC_PATH="$kcptun_path"
 if [ ! -s "$SVC_PATH" ] ; then
 	SVC_PATH="/opt/bin/client_linux_mips"
 fi
-hash client_linux_mips 2>/dev/null || rm -rf /opt/bin/client_linux_mips
+chmod 777 "$SVC_PATH"
+[[ "$(client_linux_mips -h | wc -l)" -lt 2 ]] && rm -rf /opt/bin/client_linux_mips
 if [ ! -s "$SVC_PATH" ] ; then
 	logger -t "【kcptun】" "找不到 $kcptun_path，安装 opt 程序"
 	/tmp/script/_mountopt start
@@ -157,6 +173,7 @@ fi
 if [ -s "$SVC_PATH" ] ; then
 	nvram set kcptun_path="$SVC_PATH"
 fi
+chmod 777 "$SVC_PATH"
 kcptun_path="$SVC_PATH"
 kcptun_v=`$SVC_PATH -v | awk '{print $3}'`
 nvram set kcptun_v=$kcptun_v
@@ -214,14 +231,14 @@ rm -f /tmp/arNslookup/$$
 else
 	curltest=`which curl`
 	if [ -z "$curltest" ] || [ ! -s "`which curl`" ] ; then
-		Address=`wget --continue --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`
+		Address="`wget --no-check-certificate --quiet --output-document=- http://119.29.29.29/d?dn=$1`"
 		if [ $? -eq 0 ]; then
-		echo $Address |  sed s/\;/"\n"/g
+		echo "$Address" |  sed s/\;/"\n"/g | grep -E -o '([0-9]+\.){3}[0-9]+'
 		fi
 	else
-		Address=`curl -k http://119.29.29.29/d?dn=$1`
+		Address="`curl -k http://119.29.29.29/d?dn=$1`"
 		if [ $? -eq 0 ]; then
-		echo $Address |  sed s/\;/"\n"/g
+		echo "$Address" |  sed s/\;/"\n"/g | grep -E -o '([0-9]+\.){3}[0-9]+'
 		fi
 	fi
 fi
@@ -230,11 +247,69 @@ fi
 initopt () {
 optPath=`grep ' /opt ' /proc/mounts | grep tmpfs`
 [ ! -z "$optPath" ] && return
-if [ -z "$(echo $scriptfilepath | grep "/tmp/script/")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
-	cp -Hf "$scriptfilepath" "/opt/etc/init.d/$scriptname"
+if [ ! -z "$(echo $scriptfilepath | grep -v "/opt/etc/init")" ] && [ -s "/opt/etc/init.d/rc.func" ] ; then
+	{ echo '#!/bin/sh' ; echo $scriptfilepath '"$@"' '&' ; } > /opt/etc/init.d/$scriptname && chmod 777  /opt/etc/init.d/$scriptname
 fi
 
 }
+
+initconfig () {
+
+kcptun_script="/etc/storage/kcptun_script.sh"
+if [ ! -f "$kcptun_script" ] || [ ! -s "$kcptun_script" ] ; then
+	cat > "$kcptun_script" <<-\EEE
+#!/bin/sh
+export PATH='/etc/storage/bin:/tmp/script:/etc/storage/script:/opt/usr/sbin:/opt/usr/bin:/opt/sbin:/opt/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin'
+export LD_LIBRARY_PATH=/lib:/opt/lib
+# Kcptun 项目地址：https://github.com/xtaci/kcptun
+# 参数填写教程例子：https://github.com/xtaci/kcptun
+# Kcptun Server一键安装脚本:https://blog.kuoruan.com/110.html
+# kcptun服务端部署教程
+# https://blog.kuoruan.com/102.html
+# http://www.cmsky.com/kcptun/
+# kcptun服务端主程序下载：
+# 32位系统：wget --no-check-certificate http://opt.cn2qq.com/opt-file/server_linux_386 && chmod 755 server_linux_*
+# 64位系统：wget --no-check-certificate http://opt.cn2qq.com/opt-file/server_linux_amd64 && chmod 755 server_linux_*
+# 注意！！由于路由参数默认加上--nocomp，服务端也要加上--nocomp，在两端同时设定以关闭压缩。
+# 两端参数必须一致的有:
+# datashard
+# parityshard
+# nocomp
+# key
+# crypt
+#
+################################################################
+# Kcptun 客户端配置例子
+# 服务器地址（服务器自行购买）:111.111.111.111
+# 服务器端口:29900
+# 加密方式:none
+# 监听端口:8388
+# 服务器密码:自定义密码
+#
+# 备注：由于可用参数太多，不一一举例，其他参数可以参考项目主页的介绍。
+#
+################################################################
+# Shadowsocks 客户端配置例子
+# 服务端需要部署ss服务，新建SS服务端口：8388
+# 配置路由SS服务器地址：127.0.0.1
+# 配置路由SS服务器端口：8388
+# 正确填写你刚刚新建SS服务端口、密码、加密方式、协议和混淆方式。
+#
+# 备注：如果其他设备做 Kcptun 客户端，SS服务器地址填写那个设备的内网地址。
+# 
+################################################################
+# 客户端进程数量（守护脚本判断数据，请正确填写）
+KCPNUM=1
+killall client_linux_mips
+#
+################################################################
+EEE
+	chmod 755 "$kcptun_script"
+fi
+
+}
+
+initconfig
 
 case $ACTION in
 start)
